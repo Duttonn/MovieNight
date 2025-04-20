@@ -1,0 +1,40 @@
+[vite] connecting...
+[vite] connected.
+useAuth must be used within an AuthProvider
+useAuth must be used within an AuthProvider
+The above error occurred in the <ProtectedRoute> component:
+
+    at ProtectedRoute (https://fe99860e-73c5-4a68-a83e-beb4036d5eea-00-2vnpc7cx3xjgh.worf.replit.dev/src/lib/protected-route.tsx?t=1745186745400:22:3)
+    at Switch (https://fe99860e-73c5-4a68-a83e-beb4036d5eea-00-2vnpc7cx3xjgh.worf.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=cfb893d7:394:17)
+    at div
+    at div
+    at App (https://fe99860e-73c5-4a68-a83e-beb4036d5eea-00-2vnpc7cx3xjgh.worf.replit.dev/src/App.tsx?t=1745188058779&v=zvDnhstEN6d3Iqh2BY-xm:30:22)
+    at AuthProvider (https://fe99860e-73c5-4a68-a83e-beb4036d5eea-00-2vnpc7cx3xjgh.worf.replit.dev/src/hooks/use-auth.tsx?t=1745186745400&v=zvDnhstEN6d3Iqh2BY-xm:37:32)
+    at Provider (https://fe99860e-73c5-4a68-a83e-beb4036d5eea-00-2vnpc7cx3xjgh.worf.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-5AJU3CG7.js?v=cfb893d7:38:15)
+    at TooltipProvider (https://fe99860e-73c5-4a68-a83e-beb4036d5eea-00-2vnpc7cx3xjgh.worf.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-tooltip.js?v=cfb893d7:61:5)
+    at V (https://fe99860e-73c5-4a68-a83e-beb4036d5eea-00-2vnpc7cx3xjgh.worf.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/next-themes.js?v=cfb893d7:44:25)
+    at J (https://fe99860e-73c5-4a68-a83e-beb4036d5eea-00-2vnpc7cx3xjgh.worf.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/next-themes.js?v=cfb893d7:42:18)
+    at QueryClientProvider (https://fe99860e-73c5-4a68-a83e-beb4036d5eea-00-2vnpc7cx3xjgh.worf.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@tanstack_react-query.js?v=cfb893d7:2875:3)
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries.
+
+at ProtectedRoute (https://fe99860e-73c5-4a68-a83e-beb4036d5eea-00-2vnpc7cx3xjgh.worf.replit.dev/src/lib/protected-route.tsx?t=1745186745400:22:3)
+at Switch (https://fe99860e-73c5-4a68-a83e-beb4036d5eea-00-2vnpc7cx3xjgh.worf.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=cfb893d7:394:17)
+at div
+at div
+at App (https://fe99860e-73c5-4a68-a83e-beb4036d5eea-00-2vnpc7cx3xjgh.worf.replit.dev/src/App.tsx?t=1745188058779&amp;v=zvDnhstEN6d3Iqh2BY-xm:30:22)
+at AuthProvider (https://fe99860e-73c5-4a68-a83e-beb4036d5eea-00-2vnpc7cx3xjgh.worf.replit.dev/src/hooks/use-auth.tsx?t=1745186745400&amp;v=zvDnhstEN6d3Iqh2BY-xm:37:32)
+at Provider (https://fe99860e-73c5-4a68-a83e-beb4036d5eea-00-2vnpc7cx3xjgh.worf.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-5AJU3CG7.js?v=cfb893d7:38:15)
+at TooltipProvider (https://fe99860e-73c5-4a68-a83e-beb4036d5eea-00-2vnpc7cx3xjgh.worf.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-tooltip.js?v=cfb893d7:61:5)
+at V (https://fe99860e-73c5-4a68-a83e-beb4036d5eea-00-2vnpc7cx3xjgh.worf.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/next-themes.js?v=cfb893d7:44:25)
+at J (https://fe99860e-73c5-4a68-a83e-beb4036d5eea-00-2vnpc7cx3xjgh.worf.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/next-themes.js?v=cfb893d7:42:18)
+at QueryClientProvider (https://fe99860e-73c5-4a68-a83e-beb4036d5eea-00-2vnpc7cx3xjgh.worf.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@tanstack_react-query.js?v=cfb893d7:2875:3)
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries.
+at t.value (https://fe99860e-73c5-4a68-a83e-beb4036d5eea-00-2vnpc7cx3xjgh.worf.replit.dev/__replco/static/devtools/eruda/3.2.3/eruda.js:2:17465)
+at new t (https://fe99860e-73c5-4a68-a83e-beb4036d5eea-00-2vnpc7cx3xjgh.worf.replit.dev/__replco/static/devtools/eruda/3.2.3/eruda.js:2:12630)
+at t.value (https://fe99860e-73c5-4a68-a83e-beb4036d5eea-00-2vnpc7cx3xjgh.worf.replit.dev/__replco/static/devtools/eruda/3.2.3/eruda.js:2:32766)
+at https://fe99860e-73c5-4a68-a83e-beb4036d5eea-00-2vnpc7cx3xjgh.worf.replit.dev/__replco/static/devtools/eruda/3.2.3/eruda.js:2:34400
+useAuth must be used within an AuthProvider
