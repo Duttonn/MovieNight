@@ -245,6 +245,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Add endpoint for fetching a single group by ID
+  app.get("/api/groups/:id", async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
+      
+      const { id } = req.params;
+      const group = await storage.getGroup(Number(id));
+      
+      if (!group) {
+        return res.status(404).json({ message: "Group not found" });
+      }
+      
+      // Get group members
+      const groupMembers = await storage.getGroupMembers(group.id);
+      const members = await Promise.all(
+        groupMembers.map(async (member) => {
+          const user = await storage.getUser(member.userId);
+          return user ? {
+            id: user.id,
+            username: user.username,
+            name: user.name,
+            avatar: user.avatar
+          } : null;
+        })
+      );
+      
+      res.json({
+        ...group,
+        members: members.filter(Boolean)
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.post("/api/groups", async (req, res, next) => {
     try {
       if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
@@ -285,6 +320,80 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.status(201).json({
         ...group,
+        members: members.filter(Boolean)
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Add PATCH endpoint for updating groups
+  app.patch("/api/groups/:id", async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
+      
+      const { id } = req.params;
+      const groupId = Number(id);
+      const { memberIds, ...groupData } = req.body;
+      
+      // Check if group exists
+      const group = await storage.getGroup(groupId);
+      if (!group) {
+        return res.status(404).json({ message: "Group not found" });
+      }
+      
+      // Update group metadata (name, schedule, etc.)
+      const updatedGroup = await storage.updateGroup(groupId, groupData);
+      
+      // If memberIds are provided, update the group membership
+      if (memberIds && Array.isArray(memberIds)) {
+        // Always include the current user (group owner/creator)
+        const updatedMemberIds = [...new Set([req.user.id, ...memberIds])];
+        
+        // Get current group members
+        const currentMembers = await storage.getGroupMembers(groupId);
+        const currentMemberIds = currentMembers.map(member => member.userId);
+        
+        // Find members to remove (in currentMemberIds but not in updatedMemberIds)
+        const membersToRemove = currentMemberIds.filter(
+          userId => userId !== req.user.id && !updatedMemberIds.includes(userId)
+        );
+        
+        // Find members to add (in updatedMemberIds but not in currentMemberIds)
+        const membersToAdd = updatedMemberIds.filter(
+          userId => !currentMemberIds.includes(userId)
+        );
+        
+        // Remove members - Note the order of parameters matches the storage implementation
+        for (const userId of membersToRemove) {
+          await storage.removeUserFromGroup(groupId, userId);
+        }
+        
+        // Add new members
+        for (const userId of membersToAdd) {
+          await storage.addUserToGroup({
+            groupId,
+            userId
+          });
+        }
+      }
+      
+      // Get updated group with members
+      const groupMembers = await storage.getGroupMembers(groupId);
+      const members = await Promise.all(
+        groupMembers.map(async (member) => {
+          const user = await storage.getUser(member.userId);
+          return user ? {
+            id: user.id,
+            username: user.username,
+            name: user.name,
+            avatar: user.avatar
+          } : null;
+        })
+      );
+      
+      res.json({
+        ...updatedGroup,
         members: members.filter(Boolean)
       });
     } catch (error) {

@@ -35,6 +35,22 @@ export default function MyGroups() {
     queryKey: ["/api/groups"],
   });
   
+  // Handle opening edit dialog
+  const handleEditGroup = (groupId: number) => {
+    setSelectedGroupId(groupId);
+    setEditDialogOpen(true);
+  };
+  
+  // Handle closing edit dialog
+  const handleEditDialogClose = (open: boolean) => {
+    setEditDialogOpen(open);
+    if (!open) {
+      // Optional: set a slight delay before clearing the ID to ensure
+      // the dialog transitions out smoothly
+      setTimeout(() => setSelectedGroupId(null), 300);
+    }
+  };
+  
   const formatSchedule = (group: Group) => {
     if (group.scheduleType === "recurring" && group.scheduleDay !== undefined) {
       const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -127,10 +143,7 @@ export default function MyGroups() {
                   <Button 
                     variant="outline" 
                     size="sm"
-                    onClick={() => {
-                      setSelectedGroupId(group.id);
-                      setEditDialogOpen(true);
-                    }}
+                    onClick={() => handleEditGroup(group.id)}
                   >
                     Edit
                   </Button>
@@ -146,10 +159,10 @@ export default function MyGroups() {
         onOpenChange={setCreateDialogOpen}
       />
       
-      {selectedGroupId && (
+      {selectedGroupId !== null && (
         <EditGroupDialog
           open={editDialogOpen}
-          onOpenChange={setEditDialogOpen}
+          onOpenChange={handleEditDialogClose}
           groupId={selectedGroupId}
         />
       )}

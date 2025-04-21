@@ -5,35 +5,83 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Button } from "@/components/ui/button";
 import { useState, useEffect } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { toast } from "@/hooks/use-toast";
 
-// Safely try to use auth hook - will be available after providers are initialized
 export default function Sidebar() {
   const [location] = useLocation();
-  const [user, setUser] = useState(null);
-  const [logout, setLogout] = useState(() => () => {});
+  
+  // Don't show sidebar on auth or username entry pages
+  if (location === "/auth" || location === "/username") {
+    return null;
+  }
+  
   const [isLoading, setIsLoading] = useState(true);
+  const [userData, setUserData] = useState<any>(null);
 
   useEffect(() => {
-    // Dynamically import useAuth to avoid the provider error
-    const loadAuth = async () => {
+    // Fetch user data without using hooks
+    const fetchUserData = async () => {
       try {
-        const { useAuth } = await import("@/hooks/use-auth");
-        try {
-          const auth = useAuth();
-          setUser(auth.user);
-          setLogout(() => () => auth.logoutMutation.mutate());
-        } catch (e) {
-          console.error("Failed to initialize auth:", e);
+        // Direct fetch call instead of using getCurrentUser
+        const response = await fetch('/api/user', {
+          credentials: 'include'
+        });
+        
+        if (response.status === 401) {
+          setUserData(null);
+          setIsLoading(false);
+          return;
         }
-        setIsLoading(false);
+        
+        if (!response.ok) {
+          throw new Error(`API error: ${response.status}`);
+        }
+        
+        const user = await response.json();
+        setUserData(user);
       } catch (e) {
-        console.error("Failed to load auth module:", e);
+        console.error("Failed to load user data:", e);
+      } finally {
         setIsLoading(false);
       }
     };
     
-    loadAuth();
+    fetchUserData();
   }, []);
+
+  // Function to handle logout
+  const handleLogout = async () => {
+    try {
+      const response = await fetch('/api/logout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      if (response.ok) {
+        // Update local state
+        setUserData(null);
+        toast({
+          title: "Logged out",
+          description: "You have been successfully logged out."
+        });
+        // Redirect to username entry page instead of auth
+        window.location.href = '/username';
+      } else {
+        toast({
+          title: "Logout failed",
+          description: "There was an error logging out.",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error("Logout error:", error);
+      toast({
+        title: "Logout failed",
+        description: "There was an error logging out.",
+        variant: "destructive"
+      });
+    }
+  };
 
   // Show loading state while user data is loading
   if (isLoading) {
@@ -68,8 +116,10 @@ export default function Sidebar() {
   }
   
   // No user data is available yet
-  if (!user) return null;
+  if (!userData) return null;
 
+  const user = userData;
+  
   const navItems = [
     { path: "/", label: "Dashboard", icon: Home },
     { path: "/groups", label: "My Groups", icon: Group },
@@ -139,7 +189,7 @@ export default function Sidebar() {
                   <Button 
                     variant="ghost" 
                     size="icon" 
-                    onClick={logout}
+                    onClick={handleLogout}
                   >
                     <LogOut className="h-4 w-4" />
                   </Button>
