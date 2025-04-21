@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
@@ -37,10 +37,12 @@ import { z } from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Group } from "@shared/schema"; // Assuming Group type is exported from schema
 
 interface CreateGroupDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  groupToEdit?: Group & { members: User[] }; // Add optional prop for editing
 }
 
 type User = {
@@ -50,7 +52,7 @@ type User = {
   avatar?: string;
 };
 
-const createGroupSchema = z.object({
+const groupSchema = z.object({
   name: z.string().min(3, "Name must be at least 3 characters").max(50, "Name is too long"),
   scheduleType: z.enum(["recurring", "oneoff"]),
   scheduleDay: z.number().optional(),
@@ -58,41 +60,89 @@ const createGroupSchema = z.object({
   scheduleDate: z.date().optional(),
 });
 
-type CreateGroupFormValues = z.infer<typeof createGroupSchema>;
+type GroupFormValues = z.infer<typeof groupSchema>;
 
-export function CreateGroupDialog({ open, onOpenChange }: CreateGroupDialogProps) {
+export function CreateGroupDialog({ open, onOpenChange, groupToEdit }: CreateGroupDialogProps) {
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedFriends, setSelectedFriends] = useState<User[]>([]);
-  
-  const form = useForm<CreateGroupFormValues>({
-    resolver: zodResolver(createGroupSchema),
-    defaultValues: {
-      name: "",
-      scheduleType: "recurring",
-      scheduleDay: 5, // Friday
-      scheduleTime: "19:30", // 7:30 PM
-    },
+  const [currentUserId, setCurrentUserId] = useState<number | null>(null);
+  const isEditMode = !!groupToEdit;
+
+  const form = useForm<GroupFormValues>({
+    resolver: zodResolver(groupSchema),
+    // Default values are set in useEffect if editing
   });
-  
+
+  // Fetch current user ID when dialog opens in edit mode
+  useEffect(() => {
+    const fetchCurrentUser = async () => {
+      if (isEditMode && open) {
+        try {
+          const response = await fetch('/api/user', { credentials: 'include' });
+          if (response.ok) {
+            const user = await response.json();
+            setCurrentUserId(user.id);
+          } else {
+            console.error("Failed to fetch current user for edit mode");
+          }
+        } catch (error) {
+          console.error("Error fetching current user:", error);
+        }
+      }
+    };
+    fetchCurrentUser();
+  }, [isEditMode, open]);
+
+  // Reset form and selected friends based on mode and current user ID
+  useEffect(() => {
+    if (open) {
+      if (isEditMode && groupToEdit && currentUserId !== null) {
+        form.reset({
+          name: groupToEdit.name,
+          scheduleType: groupToEdit.scheduleType,
+          scheduleDay: groupToEdit.scheduleDay ?? undefined,
+          scheduleTime: groupToEdit.scheduleTime,
+          scheduleDate: groupToEdit.scheduleDate ? new Date(groupToEdit.scheduleDate) : undefined,
+        });
+        // Filter out the current user from the initial members list
+        setSelectedFriends(groupToEdit.members.filter(member => member.id !== currentUserId));
+      } else if (!isEditMode) {
+        // Default values for create mode
+        form.reset({
+          name: "",
+          scheduleType: "recurring",
+          scheduleDay: 5, // Friday
+          scheduleTime: "19:30", // 7:30 PM
+          scheduleDate: undefined,
+        });
+        setSelectedFriends([]);
+      }
+      setSearchQuery("");
+    } else {
+      // Reset currentUserId when dialog closes
+      setCurrentUserId(null);
+    }
+  }, [open, isEditMode, groupToEdit, form, currentUserId]); // Add currentUserId dependency
+
   const watchScheduleType = form.watch("scheduleType");
-  
+
   // Fetch friends for selection
   const { data: friends } = useQuery<User[]>({
     queryKey: ["/api/friends"],
     enabled: open,
   });
-  
-  // Search results filtered by query
+
+  // Search results filtered by query and not already selected
   const filteredFriends = friends?.filter(
     friend => 
       !selectedFriends.some(selected => selected.id === friend.id) &&
       (friend.name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
        friend.username.toLowerCase().includes(searchQuery.toLowerCase()))
   );
-  
-  const createGroupMutation = useMutation({
-    mutationFn: async (values: CreateGroupFormValues) => {
+
+  const groupMutation = useMutation({
+    mutationFn: async (values: GroupFormValues) => {
       const memberIds = selectedFriends.map(friend => friend.id);
       
       const payload = {
@@ -103,16 +153,23 @@ export function CreateGroupDialog({ open, onOpenChange }: CreateGroupDialogProps
         scheduleDate: values.scheduleType === "oneoff" ? values.scheduleDate : undefined,
         memberIds,
       };
-      
-      await apiRequest("POST", "/api/groups", payload);
+
+      if (isEditMode && groupToEdit) {
+        await apiRequest("PATCH", `/api/groups/${groupToEdit.id}`, payload);
+      } else {
+        await apiRequest("POST", "/api/groups", payload);
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/groups"] });
       toast({
-        title: "Group created",
-        description: "Your movie night group has been created successfully.",
+        title: isEditMode ? "Group updated" : "Group created",
+        description: `Your movie night group has been ${isEditMode ? 'updated' : 'created'} successfully.`,
       });
-      resetForm();
+      // Don't reset form in edit mode, just close
+      if (!isEditMode) {
+         resetForm();
+      }
       onOpenChange(false);
     },
     onError: (error: Error) => {
@@ -123,22 +180,15 @@ export function CreateGroupDialog({ open, onOpenChange }: CreateGroupDialogProps
       });
     },
   });
-  
-  const onSubmit = (values: CreateGroupFormValues) => {
-    createGroupMutation.mutate(values);
+
+  const onSubmit = (values: GroupFormValues) => {
+    groupMutation.mutate(values);
   };
-  
+
   const resetForm = () => {
-    form.reset({
-      name: "",
-      scheduleType: "recurring",
-      scheduleDay: 5, // Friday
-      scheduleTime: "19:30", // 7:30 PM
-    });
-    setSelectedFriends([]);
-    setSearchQuery("");
+    // Reset logic moved to useEffect
   };
-  
+
   const addFriend = (friend: User) => {
     setSelectedFriends([...selectedFriends, friend]);
     setSearchQuery("");
@@ -149,12 +199,20 @@ export function CreateGroupDialog({ open, onOpenChange }: CreateGroupDialogProps
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(isOpen) => {
+      if (!isOpen) {
+        // Reset form state when dialog closes, regardless of mode
+        form.reset(); 
+        setSelectedFriends([]);
+        setSearchQuery("");
+      }
+      onOpenChange(isOpen);
+    }}>
       <DialogContent className="sm:max-w-[600px]">
         <DialogHeader>
-          <DialogTitle>Create Movie Night Group</DialogTitle>
+          <DialogTitle>{isEditMode ? "Edit Movie Night Group" : "Create Movie Night Group"}</DialogTitle>
           <DialogDescription>
-            Set up a new group for watching movies with friends.
+            {isEditMode ? "Update the details for your group." : "Set up a new group for watching movies with friends."}
           </DialogDescription>
         </DialogHeader>
         
@@ -313,7 +371,7 @@ export function CreateGroupDialog({ open, onOpenChange }: CreateGroupDialogProps
                       <FormLabel>Day of Week</FormLabel>
                       <Select 
                         onValueChange={(value) => field.onChange(Number(value))} 
-                        defaultValue={field.value?.toString()}
+                        value={field.value?.toString()} // Use value prop
                       >
                         <FormControl>
                           <SelectTrigger>
@@ -401,18 +459,15 @@ export function CreateGroupDialog({ open, onOpenChange }: CreateGroupDialogProps
               <Button 
                 type="button" 
                 variant="outline" 
-                onClick={() => {
-                  resetForm();
-                  onOpenChange(false);
-                }}
+                onClick={() => onOpenChange(false)} // Just close on cancel
               >
                 Cancel
               </Button>
               <Button 
                 type="submit" 
-                disabled={createGroupMutation.isPending}
+                disabled={groupMutation.isPending}
               >
-                {createGroupMutation.isPending ? "Creating..." : "Create Group"}
+                {groupMutation.isPending ? (isEditMode ? "Saving..." : "Creating...") : (isEditMode ? "Save Changes" : "Create Group")}
               </Button>
             </DialogFooter>
           </form>

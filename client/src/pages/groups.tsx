@@ -34,7 +34,7 @@ export default function Groups() {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
   const [match, params] = useRoute<{ id: string }>("/groups/:id");
-  
+
   const { data: groups, isLoading, isError } = useQuery<Group[]>({
     queryKey: ["/api/groups"],
   });
@@ -53,6 +53,21 @@ export default function Groups() {
     return `At ${group.scheduleTime}`;
   };
 
+  // Handler for edit button click
+  const handleEditGroup = (groupId: number) => {
+    setSelectedGroupId(groupId);
+    setEditDialogOpen(true);
+  };
+  
+  // Handler for edit dialog close
+  const handleEditDialogClose = (open: boolean) => {
+    setEditDialogOpen(open);
+    if (!open) {
+      // Small delay to ensure smooth transition
+      setTimeout(() => setSelectedGroupId(null), 300);
+    }
+  };
+
   return (
     <>
       {/* Mobile Header */}
@@ -62,7 +77,7 @@ export default function Groups() {
           <PlusCircle className="h-5 w-5" />
         </Button>
       </div>
-      
+
       {/* Main Content */}
       <main className="flex-1 relative overflow-y-auto focus:outline-none p-4 md:p-6 pb-24 md:pb-12">
         <div className="mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -70,15 +85,18 @@ export default function Groups() {
             <h1 className="text-2xl font-bold">My Movie Groups</h1>
             <p className="text-muted-foreground">Manage your movie night groups and schedules</p>
           </div>
-          <Button 
+          <Button
             className="flex items-center gap-2"
-            onClick={() => setCreateDialogOpen(true)}
+            onClick={() => {
+              setSelectedGroupId(null); // Reset selected group for creating a new group
+              setCreateDialogOpen(true);
+            }}
           >
             <PlusCircle className="h-4 w-4" />
             Create New Group
           </Button>
         </div>
-        
+
         {isLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {[...Array(3)].map((_, i) => (
@@ -112,7 +130,12 @@ export default function Groups() {
             <p className="text-muted-foreground mb-6">
               Create your first movie night group to start scheduling watch parties with friends.
             </p>
-            <Button onClick={() => setCreateDialogOpen(true)}>
+            <Button
+              onClick={() => {
+                setSelectedGroupId(null); // Reset selected group for creating a new group
+                setCreateDialogOpen(true);
+              }}
+            >
               Create Your First Group
             </Button>
           </Card>
@@ -133,25 +156,25 @@ export default function Groups() {
                     <Calendar className="h-4 w-4 text-primary" />
                     <span>{formatSchedule(group)}</span>
                   </div>
-                  
+
                   <div className="flex items-center text-sm text-muted-foreground gap-2">
                     <Users className="h-4 w-4 text-primary" />
                     <span>{group.members.length} members</span>
                   </div>
-                  
+
                   {group.lastMovieNight && (
                     <div className="flex items-center text-sm text-muted-foreground gap-2">
                       <Clock className="h-4 w-4 text-primary" />
                       <span>Last watched: {new Date(group.lastMovieNight).toLocaleDateString()}</span>
                     </div>
                   )}
-                  
+
                   <div className="flex -space-x-2 overflow-hidden">
                     {group.members.slice(0, 4).map((member) => (
                       <Avatar key={member.id} className="h-8 w-8 border-2 border-card">
-                        <AvatarImage 
-                          src={member.avatar} 
-                          alt={member.name || member.username} 
+                        <AvatarImage
+                          src={member.avatar}
+                          alt={member.name || member.username}
                         />
                         <AvatarFallback>
                           {(member.name || member.username).substring(0, 2).toUpperCase()}
@@ -164,22 +187,15 @@ export default function Groups() {
                       </div>
                     )}
                   </div>
-                  
+
                   <div className="flex space-x-2 pt-2">
-                    <Button 
-                      variant="secondary" 
-                      size="sm"
-                      asChild
-                    >
+                    <Button variant="secondary" size="sm" asChild>
                       <Link href={`/groups/${group.id}`}>View</Link>
                     </Button>
-                    <Button 
-                      variant="outline" 
+                    <Button
+                      variant="outline"
                       size="sm"
-                      onClick={() => {
-                        setSelectedGroupId(group.id);
-                        setEditDialogOpen(true);
-                      }}
+                      onClick={() => handleEditGroup(group.id)}
                     >
                       Edit
                     </Button>
@@ -190,16 +206,17 @@ export default function Groups() {
           </div>
         )}
       </main>
-      
-      <CreateGroupDialog 
+
+      {/* Use separate dialogs for create and edit operations */}
+      <CreateGroupDialog
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
       />
       
-      {selectedGroupId && (
+      {selectedGroupId !== null && (
         <EditGroupDialog
           open={editDialogOpen}
-          onOpenChange={setEditDialogOpen}
+          onOpenChange={handleEditDialogClose}
           groupId={selectedGroupId}
         />
       )}

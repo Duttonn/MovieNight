@@ -21,8 +21,20 @@ app.use((req, res, next) => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
+      
       if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+        // Sanitize sensitive data from logs for the user endpoint
+        if (path === '/api/user' && capturedJsonResponse) {
+          // Only log essential user info, not sensitive data
+          const safeUserData = {
+            username: capturedJsonResponse.username,
+            id: capturedJsonResponse.id
+          };
+          logLine += ` :: ${JSON.stringify(safeUserData)}`;
+        } else {
+          // For other endpoints, truncate the response for logging
+          logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+        }
       }
 
       if (logLine.length > 80) {
@@ -56,15 +68,27 @@ app.use((req, res, next) => {
     serveStatic(app);
   }
 
-  // ALWAYS serve the app on port 5000
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
-  const port = 5000;
-  server.listen({
-    port,
-    host: "0.0.0.0",
-    reusePort: true,
-  }, () => {
-    log(`serving on port ${port}`);
-  });
+  // ALWAYS try to serve the app on port 5000 first
+  // If it's in use, try alternative ports
+  const startServer = (port: number, maxRetries = 3, retryCount = 0) => {
+    server.listen({
+      port,
+      host: "0.0.0.0",
+      reusePort: true,
+    })
+    .on("error", (err: any) => {
+      if (err.code === "EADDRINUSE" && retryCount < maxRetries) {
+        log(`Port ${port} is in use, trying ${port + 1}...`);
+        startServer(port + 1, maxRetries, retryCount + 1);
+      } else {
+        console.error("Failed to start server:", err);
+        process.exit(1);
+      }
+    })
+    .on("listening", () => {
+      log(`serving on port ${port}`);
+    });
+  };
+
+  startServer(5000);
 })();
