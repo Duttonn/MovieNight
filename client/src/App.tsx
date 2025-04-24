@@ -9,6 +9,7 @@ import UsernameEntry from "@/pages/username-entry";
 import { ProtectedRoute } from "./lib/protected-route";
 import Sidebar from "./components/layout/sidebar";
 import MobileNav from "./components/layout/mobile-nav";
+import Discover from "@/pages/discover";
 
 // Simple layout component that doesn't rely on useAuth
 function App() {
@@ -37,6 +38,7 @@ function App() {
         <Switch>
           <ProtectedRoute path="/" component={Dashboard} />
           <ProtectedRoute path="/movies" component={Movies} />
+          <ProtectedRoute path="/discover" component={Discover} />
           <ProtectedRoute path="/groups" component={Groups} />
           <ProtectedRoute path="/groups/:id" component={Groups} />
           <ProtectedRoute path="/friends" component={Friends} />
