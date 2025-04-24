@@ -32,6 +32,7 @@ export function MovieCard({ movie }: MovieCardProps) {
     ? `https://image.tmdb.org/t/p/original${movie.backdropPath}`
     : null;
   const releaseYear = new Date(movie.releaseDate).getFullYear();
+  const formattedRating = movie.voteAverage ? movie.voteAverage.toFixed(1) : 'N/A';
 
   return (
     <>
@@ -57,7 +58,7 @@ export function MovieCard({ movie }: MovieCardProps) {
             <div className="flex items-center gap-2 text-sm text-white/80">
               <div className="flex items-center gap-1">
                 <Star className="h-3 w-3" />
-                <span>{movie.voteAverage.toFixed(1)}</span>
+                <span>{formattedRating}</span>
               </div>
               <span>•</span>
               <span>{releaseYear}</span>
@@ -94,7 +95,7 @@ export function MovieCard({ movie }: MovieCardProps) {
               <div className="flex items-center gap-2">
                 <Badge variant="secondary" className="flex items-center gap-1">
                   <Star className="h-3 w-3" />
-                  {movie.voteAverage.toFixed(1)}
+                  {formattedRating}
                 </Badge>
                 <Badge variant="secondary" className="flex items-center gap-1">
                   <Calendar className="h-3 w-3" />
