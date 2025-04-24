@@ -122,6 +122,7 @@ export default function Sidebar() {
   
   const navItems = [
     { path: "/", label: "Dashboard", icon: Home },
+    { path: "/discover", label: "Discover", icon: Film },
     { path: "/groups", label: "My Groups", icon: Group },
     { path: "/movies", label: "Movie List", icon: Film },
     { path: "/friends", label: "Friends", icon: Users },

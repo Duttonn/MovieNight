@@ -1,196 +1,118 @@
-import { useMutation } from "@tanstack/react-query";
-import { useToast } from "@/hooks/use-toast";
-import { queryClient } from "@/lib/queryClient";
-import { apiRequest } from "@/lib/queryClient";
+import { useState } from "react";
 import { Card } from "@/components/ui/card";
-import { Rating } from "@/components/ui/rating";
-import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
-  DialogClose,
 } from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
-import { useState } from "react";
-import { Check, Film } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Film, Star, Calendar, Plus } from "lucide-react";
 
 interface MovieCardProps {
   movie: {
     id: number;
     title: string;
-    proposerId: number;
-    proposalIntent: number;
-    interestScore?: number;
-    watched: boolean;
-    proposer?: {
-      id: number;
-      username: string;
-      name?: string;
-    };
+    overview: string;
+    posterPath: string;
+    backdropPath: string;
+    releaseDate: string;
+    voteAverage: number;
   };
 }
 
 export function MovieCard({ movie }: MovieCardProps) {
-  const { toast } = useToast();
-  const [isWatchedDialogOpen, setIsWatchedDialogOpen] = useState(false);
-  const [notes, setNotes] = useState("");
-  const [personalRating, setPersonalRating] = useState(4);
-  
-  const rateMutation = useMutation({
-    mutationFn: async (rating: number) => {
-      await apiRequest("PATCH", `/api/movies/${movie.id}/rate`, { interestScore: rating });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/movies"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/movies/top-pick"] });
-      toast({
-        title: "Rating submitted",
-        description: "Your interest rating has been saved successfully."
-      });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
-    }
-  });
-  
-  const watchMutation = useMutation({
-    mutationFn: async ({ movieId, notes, personalRating }: { movieId: number, notes: string, personalRating: number }) => {
-      await apiRequest("PATCH", `/api/movies/${movieId}/watch`, { notes, personalRating });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/movies"] });
-      setIsWatchedDialogOpen(false);
-      toast({
-        title: "Movie marked as watched",
-        description: "Your notes and rating have been saved.",
-      });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
-    }
-  });
-  
-  const handleRating = (rating: number) => {
-    rateMutation.mutate(rating);
-  };
-  
-  const handleWatched = () => {
-    watchMutation.mutate({
-      movieId: movie.id,
-      notes,
-      personalRating
-    });
-  };
+  const [isOpen, setIsOpen] = useState(false);
+  const posterUrl = movie.posterPath 
+    ? `https://image.tmdb.org/t/p/w500${movie.posterPath}`
+    : null;
+  const backdropUrl = movie.backdropPath
+    ? `https://image.tmdb.org/t/p/original${movie.backdropPath}`
+    : null;
+  const releaseYear = new Date(movie.releaseDate).getFullYear();
 
   return (
     <>
-      <Card className="bg-secondary/20 rounded-lg overflow-hidden border border-border">
-        <div className="aspect-w-16 aspect-h-9 w-full">
-          {/* Movie image placeholder */}
-          <div className="flex items-center justify-center bg-secondary/50 p-4">
-            <Film className="h-10 w-10 text-muted-foreground/50 mr-2" />
-            <span className="text-lg font-semibold truncate">{movie.title}</span>
-          </div>
-        </div>
-        <div className="p-4">
-          <h4 className="font-semibold mb-2">{movie.title}</h4>
-          <div className="flex justify-between items-center mb-3">
-            <div className="flex">
-              <Rating value={movie.proposalIntent} max={4} readOnly size="sm" />
-            </div>
-            <span className="text-xs text-muted-foreground">
-              Proposed by {movie.proposer?.name || movie.proposer?.username || "Unknown"}
-            </span>
-          </div>
-          <div className="flex flex-col space-y-2">
-            <div className="text-xs font-semibold text-muted-foreground mb-1">
-              Rate your interest:
-            </div>
-            <Rating
-              value={movie.interestScore}
-              onChange={handleRating}
-              disabled={rateMutation.isPending || movie.watched}
+      <Card 
+        className="group cursor-pointer overflow-hidden transition-all hover:scale-[1.02] hover:shadow-lg"
+        onClick={() => setIsOpen(true)}
+      >
+        <div className="relative aspect-[2/3]">
+          {posterUrl ? (
+            <img
+              src={posterUrl}
+              alt={movie.title}
+              className="object-cover w-full h-full"
+              loading="lazy"
             />
-          </div>
-          
-          {!movie.watched && (
-            <Button 
-              variant="outline" 
-              size="sm" 
-              className="w-full mt-4"
-              onClick={() => setIsWatchedDialogOpen(true)}
-            >
-              <Check className="h-4 w-4 mr-2" />
-              Mark as Watched
-            </Button>
-          )}
-          
-          {movie.watched && (
-            <div className="mt-4 p-2 bg-green-900/20 border border-green-600/30 rounded-md">
-              <p className="text-xs text-green-400 font-medium flex items-center">
-                <Check className="h-3 w-3 mr-1" />
-                Watched
-              </p>
+          ) : (
+            <div className="w-full h-full flex items-center justify-center bg-secondary">
+              <Film className="h-12 w-12 text-muted-foreground" />
             </div>
           )}
+          <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 via-black/50 to-transparent text-white">
+            <h3 className="font-semibold mb-1 line-clamp-1">{movie.title}</h3>
+            <div className="flex items-center gap-2 text-sm text-white/80">
+              <div className="flex items-center gap-1">
+                <Star className="h-3 w-3" />
+                <span>{movie.voteAverage.toFixed(1)}</span>
+              </div>
+              <span>•</span>
+              <span>{releaseYear}</span>
+            </div>
+          </div>
         </div>
       </Card>
-      
-      <Dialog open={isWatchedDialogOpen} onOpenChange={setIsWatchedDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Mark "{movie.title}" as Watched</DialogTitle>
-            <DialogDescription>
-              Add any notes or thoughts about the movie and rate your experience.
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <label htmlFor="notes" className="text-sm font-medium">
-                Your Notes (Optional)
-              </label>
-              <Textarea
-                id="notes"
-                placeholder="What did you think of the movie?"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
+
+      <Dialog open={isOpen} onOpenChange={setIsOpen}>
+        <DialogContent className="max-w-3xl h-[90vh] overflow-y-auto">
+          <div className="relative aspect-video mb-4 bg-black rounded-t-lg overflow-hidden">
+            {backdropUrl ? (
+              <img
+                src={backdropUrl}
+                alt={movie.title}
+                className="object-cover w-full h-full"
               />
-            </div>
-            
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Your Rating</label>
-              <Rating
-                value={personalRating}
-                onChange={setPersonalRating}
-                max={4}
+            ) : posterUrl ? (
+              <img
+                src={posterUrl}
+                alt={movie.title}
+                className="object-contain w-full h-full"
               />
-            </div>
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
+                <Film className="h-16 w-16 text-muted-foreground" />
+              </div>
+            )}
           </div>
           
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">Cancel</Button>
-            </DialogClose>
-            <Button 
-              onClick={handleWatched} 
-              disabled={watchMutation.isPending}
-            >
-              {watchMutation.isPending ? "Saving..." : "Save"}
+          <DialogHeader>
+            <DialogTitle className="text-2xl flex items-center justify-between">
+              <span>{movie.title}</span>
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary" className="flex items-center gap-1">
+                  <Star className="h-3 w-3" />
+                  {movie.voteAverage.toFixed(1)}
+                </Badge>
+                <Badge variant="secondary" className="flex items-center gap-1">
+                  <Calendar className="h-3 w-3" />
+                  {releaseYear}
+                </Badge>
+              </div>
+            </DialogTitle>
+            <DialogDescription className="text-base !mt-4">
+              {movie.overview}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="mt-6">
+            <Button className="w-full" onClick={() => {/* Open propose movie dialog */}}>
+              <Plus className="h-4 w-4 mr-2" />
+              Propose Movie
             </Button>
-          </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
     </>
