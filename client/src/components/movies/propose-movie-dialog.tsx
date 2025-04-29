@@ -1,8 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
 import { apiRequest } from "@/lib/queryClient";
+import { searchMovies, type TMDBMovie } from "@/lib/tmdb";
 import {
   Dialog,
   DialogContent,
@@ -26,6 +27,10 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Film, Check, ChevronsUpDown } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 type Group = {
   id: number;
@@ -59,6 +64,11 @@ export function ProposeMovieDialog({
 }: ProposeMovieDialogProps) {
   const { toast } = useToast();
   const [proposalIntent, setProposalIntent] = useState(4);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<TMDBMovie[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [openCombobox, setOpenCombobox] = useState(false);
+  const searchTimeout = useRef<NodeJS.Timeout | null>(null);
   
   const { data: groups, isLoading: isLoadingGroups } = useQuery<Group[]>({
     queryKey: ["/api/groups"],
@@ -87,7 +97,42 @@ export function ProposeMovieDialog({
       posterPath: posterPath,
     });
     setProposalIntent(4); // Reset rating state as well
+    setSearchQuery(initialTitle); // Set search query to initial title
   }, [initialTitle, tmdbId, posterPath, form]);
+  
+  // Debounced movie search
+  useEffect(() => {
+    // Skip search if initialTitle is provided (from Discover page)
+    if (initialTitle) return;
+    
+    if (searchTimeout.current) {
+      clearTimeout(searchTimeout.current);
+    }
+    
+    if (searchQuery.trim().length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    
+    setIsSearching(true);
+    
+    searchTimeout.current = setTimeout(async () => {
+      try {
+        const data = await searchMovies(searchQuery);
+        setSearchResults(data.results.slice(0, 5)); // Limit to 5 results
+      } catch (error) {
+        console.error("Movie search error:", error);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 400); // 400ms debounce
+    
+    return () => {
+      if (searchTimeout.current) {
+        clearTimeout(searchTimeout.current);
+      }
+    };
+  }, [searchQuery, initialTitle]);
   
   const proposeMutation = useMutation({
     mutationFn: async (values: ProposeMovieFormValues) => {
@@ -128,6 +173,14 @@ export function ProposeMovieDialog({
     setProposalIntent(value);
     form.setValue("proposalIntent", value);
   };
+  
+  const handleSelectMovie = (movie: TMDBMovie) => {
+    form.setValue("title", movie.title);
+    form.setValue("tmdbId", movie.id);
+    form.setValue("posterPath", movie.poster_path);
+    setSearchQuery(movie.title);
+    setOpenCombobox(false);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -145,16 +198,108 @@ export function ProposeMovieDialog({
               control={form.control}
               name="title"
               render={({ field }) => (
-                <FormItem>
+                <FormItem className="flex flex-col">
                   <FormLabel>Movie Title</FormLabel>
                   <FormControl>
-                    {/* Make input readOnly if proposing from Discover page */}
-                    <Input placeholder="Enter movie title" {...field} readOnly={!!initialTitle} />
+                    {initialTitle ? (
+                      // If initialTitle is provided (from Discover), use a simple read-only input
+                      <Input placeholder="Enter movie title" {...field} readOnly={true} />
+                    ) : (
+                      // Otherwise, show the searchable combobox
+                      <Popover open={openCombobox} onOpenChange={setOpenCombobox}>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            role="combobox"
+                            aria-expanded={openCombobox}
+                            className="justify-between w-full font-normal"
+                          >
+                            {field.value || "Search for a movie..."}
+                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="p-0 w-[300px]" align="start">
+                          <Command>
+                            <CommandInput 
+                              placeholder="Search for a movie..." 
+                              value={searchQuery}
+                              onValueChange={(value) => {
+                                setSearchQuery(value);
+                                // Only update form value if user is manually typing
+                                if (!searchResults.find(movie => movie.title === value)) {
+                                  field.onChange(value);
+                                  form.setValue("tmdbId", undefined);
+                                  form.setValue("posterPath", null);
+                                }
+                              }}
+                              className="h-9"
+                            />
+                            <CommandList>
+                              {isSearching && (
+                                <CommandEmpty>Searching movies...</CommandEmpty>
+                              )}
+                              {!isSearching && searchQuery.trim().length < 2 && (
+                                <CommandEmpty>Type at least 2 characters to search</CommandEmpty>
+                              )}
+                              {!isSearching && searchQuery.trim().length >= 2 && searchResults.length === 0 && (
+                                <CommandEmpty>No movies found</CommandEmpty>
+                              )}
+                              <CommandGroup>
+                                {searchResults.map((movie) => (
+                                  <CommandItem
+                                    key={movie.id}
+                                    value={movie.title}
+                                    onSelect={() => handleSelectMovie(movie)}
+                                    className="flex items-center gap-2"
+                                  >
+                                    {movie.poster_path ? (
+                                      <div className="h-8 w-6 flex-shrink-0 overflow-hidden rounded">
+                                        <img 
+                                          src={`https://image.tmdb.org/t/p/w92${movie.poster_path}`} 
+                                          alt={movie.title}
+                                          className="h-full w-full object-cover"
+                                        />
+                                      </div>
+                                    ) : (
+                                      <Film className="h-4 w-4 text-muted-foreground" />
+                                    )}
+                                    <div className="flex flex-col">
+                                      <span>{movie.title}</span>
+                                      {movie.release_date && (
+                                        <span className="text-xs text-muted-foreground">
+                                          {new Date(movie.release_date).getFullYear()}
+                                        </span>
+                                      )}
+                                    </div>
+                                    {field.value === movie.title && (
+                                      <Check className="ml-auto h-4 w-4" />
+                                    )}
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
+                    )}
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
+            
+            {/* Show selected movie poster if available */}
+            {form.watch("posterPath") && !initialTitle && (
+              <div className="flex justify-center">
+                <div className="h-40 w-28 overflow-hidden rounded-md border border-border">
+                  <img 
+                    src={`https://image.tmdb.org/t/p/w185${form.watch("posterPath")}`} 
+                    alt={form.watch("title")}
+                    className="h-full w-full object-cover"
+                  />
+                </div>
+              </div>
+            )}
             
             <FormField
               control={form.control}
@@ -164,7 +309,7 @@ export function ProposeMovieDialog({
                   <FormLabel>Select Group</FormLabel>
                   <Select 
                     onValueChange={field.onChange} 
-                    value={field.value} // Use value prop for controlled component
+                    value={field.value}
                     disabled={isLoadingGroups || !groups || groups.length === 0}
                   >
                     <FormControl>

@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PlusCircle, Filter } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ProposeMovieDialog } from "@/components/movies/propose-movie-dialog";
-import { MovieCard } from "@/components/movies/movie-card";
+import { SuggestionMovieCard } from "@/components/movies/suggestion-movie-card";
 
 export default function Movies() {
   const [proposeDialogOpen, setProposeDialogOpen] = useState(false);
@@ -108,7 +108,7 @@ export default function Movies() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {filteredMovies.map((movie) => (
-                  <MovieCard key={movie.id} movie={movie} />
+                  <SuggestionMovieCard key={movie.id} movie={movie} />
                 ))}
               </div>
             )}
