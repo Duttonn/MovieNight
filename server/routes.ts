@@ -293,7 +293,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
       
-      const groupData = insertGroupSchema.parse(req.body);
+      // Handle date conversion if scheduleDate is a string
+      const requestData = { ...req.body };
+      if (typeof requestData.scheduleDate === 'string' && requestData.scheduleDate) {
+        requestData.scheduleDate = new Date(requestData.scheduleDate);
+      }
+      
+      const groupData = insertGroupSchema.parse(requestData);
       const memberIds = req.body.memberIds || [];
       
       // Create the group

@@ -1,5 +1,5 @@
 import { useLocation } from "wouter";
-import { Home, Users, Film, Group, Settings, LogOut } from "lucide-react";
+import { Home, Users, Film, Group, Settings, LogOut, Calendar } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
@@ -124,6 +124,7 @@ export default function Sidebar() {
     { path: "/", label: "Dashboard", icon: Home },
     { path: "/discover", label: "Discover", icon: Film },
     { path: "/groups", label: "My Groups", icon: Group },
+    { path: "/schedule", label: "Schedule", icon: Calendar },
     { path: "/movies", label: "Movie List", icon: Film },
     { path: "/friends", label: "Friends", icon: Users },
     { path: "/settings", label: "Settings", icon: Settings },

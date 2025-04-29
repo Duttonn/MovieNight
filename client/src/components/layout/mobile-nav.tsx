@@ -1,5 +1,5 @@
 import { useLocation } from "wouter";
-import { Home, Users, Film, Group, Search } from "lucide-react";
+import { Home, Users, Film, Group, Search, Calendar } from "lucide-react";
 
 export default function MobileNav() {
   const [location] = useLocation();
@@ -8,6 +8,7 @@ export default function MobileNav() {
     { path: "/", label: "Home", icon: Home },
     { path: "/discover", label: "Discover", icon: Search },
     { path: "/groups", label: "Groups", icon: Group },
+    { path: "/schedule", label: "Schedule", icon: Calendar },
     { path: "/movies", label: "Movies", icon: Film },
     { path: "/friends", label: "Friends", icon: Users },
   ];

@@ -4,9 +4,10 @@ import AuthPage from "@/pages/auth-page";
 import Dashboard from "@/pages/dashboard";
 import Movies from "@/pages/movies";
 import Groups from "@/pages/groups";
-import GroupDetail from "@/pages/group-detail"; // Import the new component
+import GroupDetail from "@/pages/group-detail"; 
 import Friends from "@/pages/friends";
 import UsernameEntry from "@/pages/username-entry";
+import Schedule from "@/pages/schedule";
 import { ProtectedRoute } from "./lib/protected-route";
 import Sidebar from "./components/layout/sidebar";
 import MobileNav from "./components/layout/mobile-nav";
@@ -41,9 +42,9 @@ function App() {
           <ProtectedRoute path="/movies" component={Movies} />
           <ProtectedRoute path="/discover" component={Discover} />
           <ProtectedRoute path="/groups" component={Groups} />
-          {/* Use GroupDetail for the specific group route */}
           <ProtectedRoute path="/groups/:id" component={GroupDetail} /> 
           <ProtectedRoute path="/friends" component={Friends} />
+          <ProtectedRoute path="/schedule" component={Schedule} />
           <Route path="/auth" component={AuthPage} />
           <Route path="/username" component={UsernameEntry} />
           <Route component={NotFound} />

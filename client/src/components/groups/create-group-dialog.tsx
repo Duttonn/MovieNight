@@ -42,7 +42,9 @@ import { Group } from "@shared/schema"; // Assuming Group type is exported from 
 interface CreateGroupDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  groupToEdit?: Group & { members: User[] }; // Add optional prop for editing
+  groupToEdit?: Group & { members: User[] };
+  initialValues?: Partial<GroupFormValues>;
+  onGroupCreated?: (group: any) => void; // <-- add this
 }
 
 type User = {
@@ -62,7 +64,7 @@ const groupSchema = z.object({
 
 type GroupFormValues = z.infer<typeof groupSchema>;
 
-export function CreateGroupDialog({ open, onOpenChange, groupToEdit }: CreateGroupDialogProps) {
+export function CreateGroupDialog({ open, onOpenChange, groupToEdit, initialValues, onGroupCreated }: CreateGroupDialogProps) {
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedFriends, setSelectedFriends] = useState<User[]>([]);
@@ -105,25 +107,23 @@ export function CreateGroupDialog({ open, onOpenChange, groupToEdit }: CreateGro
           scheduleTime: groupToEdit.scheduleTime,
           scheduleDate: groupToEdit.scheduleDate ? new Date(groupToEdit.scheduleDate) : undefined,
         });
-        // Filter out the current user from the initial members list
         setSelectedFriends(groupToEdit.members.filter(member => member.id !== currentUserId));
       } else if (!isEditMode) {
-        // Default values for create mode
+        // Use initialValues if provided, otherwise defaults
         form.reset({
           name: "",
-          scheduleType: "recurring",
-          scheduleDay: 5, // Friday
-          scheduleTime: "19:30", // 7:30 PM
-          scheduleDate: undefined,
+          scheduleType: initialValues?.scheduleType ?? "recurring",
+          scheduleDay: initialValues?.scheduleDay ?? 5,
+          scheduleTime: initialValues?.scheduleTime ?? "19:30",
+          scheduleDate: initialValues?.scheduleDate ?? undefined,
         });
         setSelectedFriends([]);
       }
       setSearchQuery("");
     } else {
-      // Reset currentUserId when dialog closes
       setCurrentUserId(null);
     }
-  }, [open, isEditMode, groupToEdit, form, currentUserId]); // Add currentUserId dependency
+  }, [open, isEditMode, groupToEdit, form, currentUserId, initialValues]); // Add initialValues dependency
 
   const watchScheduleType = form.watch("scheduleType");
 
@@ -144,31 +144,35 @@ export function CreateGroupDialog({ open, onOpenChange, groupToEdit }: CreateGro
   const groupMutation = useMutation({
     mutationFn: async (values: GroupFormValues) => {
       const memberIds = selectedFriends.map(friend => friend.id);
-      
       const payload = {
         name: values.name,
         scheduleType: values.scheduleType,
         scheduleDay: values.scheduleType === "recurring" ? values.scheduleDay : undefined,
         scheduleTime: values.scheduleTime,
-        scheduleDate: values.scheduleType === "oneoff" ? values.scheduleDate : undefined,
+        scheduleDate: values.scheduleType === "oneoff" && values.scheduleDate 
+          ? new Date(values.scheduleDate) 
+          : undefined,
         memberIds,
       };
-
+      let createdGroup = null;
       if (isEditMode && groupToEdit) {
         await apiRequest("PATCH", `/api/groups/${groupToEdit.id}`, payload);
       } else {
-        await apiRequest("POST", "/api/groups", payload);
+        createdGroup = await apiRequest("POST", "/api/groups", payload);
       }
+      return createdGroup;
     },
-    onSuccess: () => {
+    onSuccess: (createdGroup) => {
       queryClient.invalidateQueries({ queryKey: ["/api/groups"] });
       toast({
         title: isEditMode ? "Group updated" : "Group created",
         description: `Your movie night group has been ${isEditMode ? 'updated' : 'created'} successfully.`,
       });
-      // Don't reset form in edit mode, just close
       if (!isEditMode) {
-         resetForm();
+        resetForm();
+      }
+      if (onGroupCreated && createdGroup) {
+        onGroupCreated(createdGroup);
       }
       onOpenChange(false);
     },
