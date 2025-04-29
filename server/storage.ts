@@ -1,11 +1,8 @@
-import { 
-  users, User, InsertUser, 
-  movies, Movie, InsertMovie,
-  groups, Group, InsertGroup,
-  groupMembers, GroupMember, InsertGroupMember,
-  friendRequests, FriendRequest, InsertFriendRequest,
-  friends, Friend, InsertFriend
-} from "@shared/schema";
+import { drizzle } from 'drizzle-orm/libsql';
+import { createClient } from '@libsql/client';
+import * as schema from '@shared/schema'; // Import all schema objects
+import { eq, and, not, desc, sql, inArray, or, isNull } from 'drizzle-orm'; // Added or, isNull
+
 import session from "express-session";
 import createMemoryStore from "memorystore";
 
@@ -14,268 +11,267 @@ const MemoryStore = createMemoryStore(session);
 // Define the storage interface
 export interface IStorage {
   sessionStore: session.SessionStore;
-  
+
   // User operations
-  getUser(id: number): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
-  getUserByEmail(email: string): Promise<User | undefined>;
-  createUser(user: InsertUser): Promise<User>;
-  
+  getUser(id: number): Promise<schema.User | undefined>;
+  getUserByUsername(username: string): Promise<schema.User | undefined>;
+  getUserByEmail(email: string): Promise<schema.User | undefined>;
+  createUser(user: schema.InsertUser): Promise<schema.User>;
+  searchUsers(query: string, excludeUserId: number): Promise<schema.User[]>;
+
   // Movie operations
-  getMovie(id: number): Promise<Movie | undefined>;
-  getMoviesByUser(userId: number): Promise<Movie[]>;
-  getMoviesByGroup(groupId: number): Promise<Movie[]>;
-  getUnwatchedMovies(): Promise<Movie[]>;
-  createMovie(movie: InsertMovie): Promise<Movie>;
-  updateMovie(id: number, updates: Partial<Movie>): Promise<Movie | undefined>;
-  
+  getMovie(id: number): Promise<schema.Movie | undefined>;
+  getMoviesByUser(userId: number): Promise<schema.Movie[]>;
+  getMoviesByGroup(groupId: number): Promise<schema.Movie[]>;
+  getUnwatchedMovies(userId: number): Promise<schema.Movie[]>; // Updated to accept userId
+  createMovie(movie: schema.InsertMovie): Promise<schema.Movie>;
+  updateMovie(id: number, updates: Partial<schema.Movie>): Promise<schema.Movie | undefined>;
+
   // Group operations
-  getGroup(id: number): Promise<Group | undefined>;
-  getGroupsByUser(userId: number): Promise<Group[]>;
-  createGroup(group: InsertGroup): Promise<Group>;
-  updateGroup(id: number, updates: Partial<Group>): Promise<Group | undefined>;
-  
+  getGroup(id: number): Promise<schema.Group | undefined>;
+  getGroupsByUser(userId: number): Promise<schema.Group[]>;
+  createGroup(group: schema.InsertGroup): Promise<schema.Group>;
+  updateGroup(id: number, updates: Partial<schema.Group>): Promise<schema.Group | undefined>;
+
   // Group member operations
-  addUserToGroup(groupMember: InsertGroupMember): Promise<GroupMember>;
-  getGroupMembers(groupId: number): Promise<GroupMember[]>;
+  addUserToGroup(groupMember: schema.InsertGroupMember): Promise<schema.GroupMember>;
+  getGroupMembers(groupId: number): Promise<schema.GroupMember[]>;
   removeUserFromGroup(groupId: number, userId: number): Promise<void>;
-  
+
   // Friend request operations
-  createFriendRequest(friendRequest: InsertFriendRequest): Promise<FriendRequest>;
-  getFriendRequestById(id: number): Promise<FriendRequest | undefined>;
-  getPendingFriendRequests(userId: number): Promise<FriendRequest[]>;
-  updateFriendRequestStatus(id: number, status: string): Promise<FriendRequest | undefined>;
-  
+  createFriendRequest(friendRequest: schema.InsertFriendRequest): Promise<schema.FriendRequest>;
+  getFriendRequestById(id: number): Promise<schema.FriendRequest | undefined>;
+  getPendingFriendRequests(userId: number): Promise<schema.FriendRequest[]>;
+  updateFriendRequestStatus(id: number, status: string): Promise<schema.FriendRequest | undefined>;
+
   // Friend operations
-  addFriend(friend: InsertFriend): Promise<Friend>;
-  getFriends(userId: number): Promise<User[]>;
+  addFriend(friend: schema.InsertFriend): Promise<schema.Friend>;
+  getFriends(userId: number): Promise<schema.User[]>;
   removeFriend(userId: number, friendId: number): Promise<void>;
 }
 
-// In-memory implementation
-export class MemStorage implements IStorage {
-  private usersMap: Map<number, User>;
-  private moviesMap: Map<number, Movie>;
-  private groupsMap: Map<number, Group>;
-  private groupMembersMap: Map<number, GroupMember>;
-  private friendRequestsMap: Map<number, FriendRequest>;
-  private friendsMap: Map<number, Friend>;
-  
+// Drizzle/SQLite implementation
+class DrizzleStorage implements IStorage {
+  private db;
   sessionStore: session.SessionStore;
-  
-  private userId: number;
-  private movieId: number;
-  private groupId: number;
-  private groupMemberId: number;
-  private friendRequestId: number;
-  private friendId: number;
 
   constructor() {
-    this.usersMap = new Map();
-    this.moviesMap = new Map();
-    this.groupsMap = new Map();
-    this.groupMembersMap = new Map();
-    this.friendRequestsMap = new Map();
-    this.friendsMap = new Map();
-    
-    this.userId = 1;
-    this.movieId = 1;
-    this.groupId = 1;
-    this.groupMemberId = 1;
-    this.friendRequestId = 1;
-    this.friendId = 1;
-    
+    const sqliteClient = createClient({ url: "file:./local.db" });
+    this.db = drizzle(sqliteClient, { schema }); // Use the imported schema
+
     this.sessionStore = new MemoryStore({
       checkPeriod: 86400000 // 24 hours
     });
   }
 
-  // User operations
-  async getUser(id: number): Promise<User | undefined> {
-    return this.usersMap.get(id);
+  // --- Updated Movie Operations ---
+
+  async createMovie(insertMovie: schema.InsertMovie): Promise<schema.Movie> {
+    // Drizzle automatically handles default values like proposedAt, watched
+    const result = await this.db.insert(schema.movies).values(insertMovie).returning();
+    if (!result || result.length === 0) throw new Error("Failed to create movie");
+    return result[0];
   }
 
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.usersMap.values()).find(
-      (user) => user.username.toLowerCase() === username.toLowerCase()
-    );
-  }
-
-  async getUserByEmail(email: string): Promise<User | undefined> {
-    return Array.from(this.usersMap.values()).find(
-      (user) => user.email.toLowerCase() === email.toLowerCase()
-    );
-  }
-
-  async createUser(insertUser: InsertUser): Promise<User> {
-    const id = this.userId++;
-    const user: User = { ...insertUser, id };
-    this.usersMap.set(id, user);
-    return user;
-  }
-
-  // Movie operations
-  async getMovie(id: number): Promise<Movie | undefined> {
-    return this.moviesMap.get(id);
-  }
-
-  async getMoviesByUser(userId: number): Promise<Movie[]> {
-    return Array.from(this.moviesMap.values()).filter(
-      (movie) => movie.proposerId === userId
-    );
-  }
-
-  async getMoviesByGroup(groupId: number): Promise<Movie[]> {
-    return Array.from(this.moviesMap.values()).filter(
-      (movie) => movie.groupId === groupId
-    );
-  }
-
-  async getUnwatchedMovies(): Promise<Movie[]> {
-    return Array.from(this.moviesMap.values()).filter(
-      (movie) => !movie.watched
-    );
-  }
-
-  async createMovie(insertMovie: InsertMovie): Promise<Movie> {
-    const id = this.movieId++;
-    const movie: Movie = { 
-      ...insertMovie, 
-      id, 
-      proposedAt: new Date(), 
-      watched: false
-    };
-    this.moviesMap.set(id, movie);
-    return movie;
-  }
-
-  async updateMovie(id: number, updates: Partial<Movie>): Promise<Movie | undefined> {
-    const movie = this.moviesMap.get(id);
-    if (!movie) return undefined;
+  async getUnwatchedMovies(userId: number): Promise<schema.Movie[]> {
+    // 1. Get the IDs of groups the user is a member of
+    const userGroupMemberships = await this.db.select({ groupId: schema.groupMembers.groupId })
+                                             .from(schema.groupMembers)
+                                             .where(eq(schema.groupMembers.userId, userId));
+    const userGroupIds = userGroupMemberships.map(gm => gm.groupId);
     
-    const updatedMovie = { ...movie, ...updates };
-    this.moviesMap.set(id, updatedMovie);
-    return updatedMovie;
-  }
-
-  // Group operations
-  async getGroup(id: number): Promise<Group | undefined> {
-    return this.groupsMap.get(id);
-  }
-
-  async getGroupsByUser(userId: number): Promise<Group[]> {
-    const userGroupIds = Array.from(this.groupMembersMap.values())
-      .filter(member => member.userId === userId)
-      .map(member => member.groupId);
+    // 2. Get the IDs of users who are friends with the current user
+    const friendships = await this.db.select({ friendId: schema.friends.friendId })
+                                    .from(schema.friends)
+                                    .where(eq(schema.friends.userId, userId));
+    const friendIds = friendships.map(f => f.friendId);
     
-    return Array.from(this.groupsMap.values())
-      .filter(group => userGroupIds.includes(group.id));
+    // 3. Fetch movies that are unwatched AND match one of the following criteria:
+    //    - Belong to one of the user's groups
+    //    - Were proposed by a friend of the user
+    //    - Were proposed by the user themselves
+    return await this.db.select()
+      .from(schema.movies)
+      .where(and(
+        eq(schema.movies.watched, false), // Unwatched movies only
+        or(
+          userGroupIds.length > 0 ? inArray(schema.movies.groupId, userGroupIds) : sql`false`, // In user's groups
+          friendIds.length > 0 ? inArray(schema.movies.proposerId, friendIds) : sql`false`, // Proposed by friends
+          eq(schema.movies.proposerId, userId) // Proposed by the user themselves
+        )
+      ));
   }
 
-  async createGroup(insertGroup: InsertGroup): Promise<Group> {
-    const id = this.groupId++;
-    const group: Group = { 
-      ...insertGroup,
-      id,
-      currentProposerIndex: 0
-    };
-    this.groupsMap.set(id, group);
-    return group;
+  // --- User Operations ---
+  async getUser(id: number): Promise<schema.User | undefined> {
+    const result = await this.db.select().from(schema.users).where(eq(schema.users.id, id)).limit(1);
+    return result[0];
   }
 
-  async updateGroup(id: number, updates: Partial<Group>): Promise<Group | undefined> {
-    const group = this.groupsMap.get(id);
-    if (!group) return undefined;
-    
-    const updatedGroup = { ...group, ...updates };
-    this.groupsMap.set(id, updatedGroup);
-    return updatedGroup;
+  async getUserByUsername(username: string): Promise<schema.User | undefined> {
+     // Assuming case-insensitive search is desired, use lower() if DB supports it or handle in code
+     // For simplicity here, using direct comparison (might be case-sensitive depending on SQLite collation)
+     // Using sql.lower for potential case-insensitivity in SQLite
+    const result = await this.db.select().from(schema.users).where(eq(sql`lower(${schema.users.username})`, username.toLowerCase())).limit(1);
+    return result[0];
   }
 
-  // Group member operations
-  async addUserToGroup(insertGroupMember: InsertGroupMember): Promise<GroupMember> {
-    const id = this.groupMemberId++;
-    const groupMember: GroupMember = { ...insertGroupMember, id };
-    this.groupMembersMap.set(id, groupMember);
-    return groupMember;
+   async getUserByEmail(email: string): Promise<schema.User | undefined> {
+    // Using sql.lower for potential case-insensitivity
+    const result = await this.db.select().from(schema.users).where(eq(sql`lower(${schema.users.email})`, email.toLowerCase())).limit(1);
+    return result[0];
   }
 
-  async getGroupMembers(groupId: number): Promise<GroupMember[]> {
-    return Array.from(this.groupMembersMap.values()).filter(
-      (member) => member.groupId === groupId
-    );
+  async createUser(insertUser: schema.InsertUser): Promise<schema.User> {
+    const result = await this.db.insert(schema.users).values(insertUser).returning();
+     if (!result || result.length === 0) throw new Error("Failed to create user");
+    return result[0];
+  }
+
+  // --- New User Search Operation ---
+  async searchUsers(query: string, excludeUserId: number): Promise<schema.User[]> {
+    const lowerQuery = query.toLowerCase();
+    // Use `like` for partial matching and `sql.lower` for case-insensitivity
+    // Filter out the user performing the search
+    return await this.db.select()
+      .from(schema.users)
+      .where(and(
+        not(eq(schema.users.id, excludeUserId)), // Exclude the current user
+        sql`lower(${schema.users.username}) LIKE ${'%' + lowerQuery + '%'}` // Search username (case-insensitive)
+        // Optionally add search by name if needed:
+        // or(sql`lower(${schema.users.name}) LIKE ${'%' + lowerQuery + '%'}`)
+      ))
+      .limit(10); // Limit results for performance
+  }
+
+  // --- Other Movie Operations ---
+
+  async getMovie(id: number): Promise<schema.Movie | undefined> {
+    const result = await this.db.select().from(schema.movies).where(eq(schema.movies.id, id)).limit(1);
+    return result[0];
+  }
+
+  async getMoviesByUser(userId: number): Promise<schema.Movie[]> {
+     return await this.db.select().from(schema.movies).where(eq(schema.movies.proposerId, userId));
+  }
+
+  async getMoviesByGroup(groupId: number): Promise<schema.Movie[]> {
+     return await this.db.select().from(schema.movies).where(eq(schema.movies.groupId, groupId));
+  }
+
+  async updateMovie(id: number, updates: Partial<schema.Movie>): Promise<schema.Movie | undefined> {
+    const result = await this.db.update(schema.movies).set(updates).where(eq(schema.movies.id, id)).returning();
+    return result[0];
+  }
+
+  // --- Group Operations ---
+  async getGroup(id: number): Promise<schema.Group | undefined> {
+    const result = await this.db.select().from(schema.groups).where(eq(schema.groups.id, id)).limit(1);
+    return result[0];
+  }
+
+  async getGroupsByUser(userId: number): Promise<schema.Group[]> {
+    // This requires a join or subquery with groupMembers table
+    const groupMemberships = await this.db.select({ groupId: schema.groupMembers.groupId })
+                                         .from(schema.groupMembers)
+                                         .where(eq(schema.groupMembers.userId, userId));
+    const groupIds = groupMemberships.map(gm => gm.groupId);
+    if (groupIds.length === 0) return [];
+    // Use inArray for better SQL generation
+    return await this.db.select().from(schema.groups).where(inArray(schema.groups.id, groupIds));
+  }
+
+  async createGroup(insertGroup: schema.InsertGroup): Promise<schema.Group> {
+     const result = await this.db.insert(schema.groups).values({
+       ...insertGroup,
+       currentProposerIndex: 0 // Ensure default is set if not in schema default
+     }).returning();
+      if (!result || result.length === 0) throw new Error("Failed to create group");
+     return result[0];
+  }
+
+  async updateGroup(id: number, updates: Partial<schema.Group>): Promise<schema.Group | undefined> {
+    const result = await this.db.update(schema.groups).set(updates).where(eq(schema.groups.id, id)).returning();
+    return result[0];
+  }
+
+  // --- Group Member Operations ---
+  async addUserToGroup(insertGroupMember: schema.InsertGroupMember): Promise<schema.GroupMember> {
+    const result = await this.db.insert(schema.groupMembers).values(insertGroupMember).returning();
+     if (!result || result.length === 0) throw new Error("Failed to add user to group");
+    return result[0];
+  }
+
+  async getGroupMembers(groupId: number): Promise<schema.GroupMember[]> {
+    return await this.db.select().from(schema.groupMembers).where(eq(schema.groupMembers.groupId, groupId));
   }
 
   async removeUserFromGroup(groupId: number, userId: number): Promise<void> {
-    const groupMemberEntry = Array.from(this.groupMembersMap.entries()).find(
-      ([_, member]) => member.groupId === groupId && member.userId === userId
-    );
-    
-    if (groupMemberEntry) {
-      this.groupMembersMap.delete(groupMemberEntry[0]);
-    }
+    await this.db.delete(schema.groupMembers).where(and(
+      eq(schema.groupMembers.groupId, groupId),
+      eq(schema.groupMembers.userId, userId)
+    ));
   }
 
-  // Friend request operations
-  async createFriendRequest(insertFriendRequest: InsertFriendRequest): Promise<FriendRequest> {
-    const id = this.friendRequestId++;
-    const friendRequest: FriendRequest = { 
-      ...insertFriendRequest,
-      id,
-      status: "pending",
-      createdAt: new Date()
-    };
-    this.friendRequestsMap.set(id, friendRequest);
-    return friendRequest;
+  // --- Friend Request Operations ---
+  async createFriendRequest(insertFriendRequest: schema.InsertFriendRequest): Promise<schema.FriendRequest> {
+     const result = await this.db.insert(schema.friendRequests).values({
+       ...insertFriendRequest,
+       status: 'pending', // Ensure default status
+       createdAt: new Date() // Ensure default timestamp
+     }).returning();
+      if (!result || result.length === 0) throw new Error("Failed to create friend request");
+     return result[0];
   }
 
-  async getFriendRequestById(id: number): Promise<FriendRequest | undefined> {
-    return this.friendRequestsMap.get(id);
+   async getFriendRequestById(id: number): Promise<schema.FriendRequest | undefined> {
+    const result = await this.db.select().from(schema.friendRequests).where(eq(schema.friendRequests.id, id)).limit(1);
+    return result[0];
   }
 
-  async getPendingFriendRequests(userId: number): Promise<FriendRequest[]> {
-    return Array.from(this.friendRequestsMap.values()).filter(
-      (request) => request.toUserId === userId && request.status === "pending"
-    );
+  async getPendingFriendRequests(userId: number): Promise<schema.FriendRequest[]> {
+    return await this.db.select().from(schema.friendRequests).where(and(
+      eq(schema.friendRequests.toUserId, userId),
+      eq(schema.friendRequests.status, 'pending')
+    ));
   }
 
-  async updateFriendRequestStatus(id: number, status: string): Promise<FriendRequest | undefined> {
-    const request = this.friendRequestsMap.get(id);
-    if (!request) return undefined;
-    
-    const updatedRequest = { ...request, status };
-    this.friendRequestsMap.set(id, updatedRequest);
-    return updatedRequest;
+  async updateFriendRequestStatus(id: number, status: string): Promise<schema.FriendRequest | undefined> {
+    const result = await this.db.update(schema.friendRequests).set({ status }).where(eq(schema.friendRequests.id, id)).returning();
+    return result[0];
   }
 
-  // Friend operations
-  async addFriend(insertFriend: InsertFriend): Promise<Friend> {
-    const id = this.friendId++;
-    const friend: Friend = { ...insertFriend, id };
-    this.friendsMap.set(id, friend);
-    return friend;
+  // --- Friend Operations ---
+  async addFriend(insertFriend: schema.InsertFriend): Promise<schema.Friend> {
+    const result = await this.db.insert(schema.friends).values(insertFriend).returning();
+     if (!result || result.length === 0) throw new Error("Failed to add friend");
+    return result[0];
   }
 
-  async getFriends(userId: number): Promise<User[]> {
-    const friendIds = Array.from(this.friendsMap.values())
-      .filter(friendship => friendship.userId === userId)
-      .map(friendship => friendship.friendId);
-    
-    return Array.from(this.usersMap.values())
-      .filter(user => friendIds.includes(user.id));
+  async getFriends(userId: number): Promise<schema.User[]> {
+    // Requires join
+    const friendships = await this.db.select({ friendId: schema.friends.friendId })
+                                    .from(schema.friends)
+                                    .where(eq(schema.friends.userId, userId));
+    const friendIds = friendships.map(f => f.friendId);
+     if (friendIds.length === 0) return [];
+     // Use inArray for better SQL generation
+    return await this.db.select().from(schema.users).where(inArray(schema.users.id, friendIds));
   }
 
   async removeFriend(userId: number, friendId: number): Promise<void> {
-    const friendshipEntry = Array.from(this.friendsMap.entries()).find(
-      ([_, friendship]) => 
-        (friendship.userId === userId && friendship.friendId === friendId) ||
-        (friendship.userId === friendId && friendship.friendId === userId)
-    );
-    
-    if (friendshipEntry) {
-      this.friendsMap.delete(friendshipEntry[0]);
-    }
+     // Need to remove both directions
+    await this.db.delete(schema.friends).where(and(
+      eq(schema.friends.userId, userId),
+      eq(schema.friends.friendId, friendId)
+    ));
+     await this.db.delete(schema.friends).where(and(
+      eq(schema.friends.userId, friendId),
+      eq(schema.friends.friendId, userId)
+    ));
   }
+
 }
 
-export const storage = new MemStorage();
+// Export the Drizzle-based storage instance
+export const storage = new DrizzleStorage();

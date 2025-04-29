@@ -3,11 +3,13 @@ import { createServer, type Server } from "http";
 import { setupAuth } from "./auth";
 import { storage } from "./storage";
 import { z } from "zod";
+import bcrypt from 'bcrypt'; // Import bcrypt
 import { 
   insertMovieSchema, 
   insertGroupSchema,
   insertGroupMemberSchema,
-  insertFriendRequestSchema
+  insertFriendRequestSchema,
+  type InsertMovie // Import InsertMovie type
 } from "@shared/schema";
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -28,22 +30,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // If user doesn't exist, create a new one with basic info
       if (!existingUser) {
-        // Create a random password
+        // Create a random password and hash it
         const tempPassword = Math.random().toString(36).slice(2);
+        const saltRounds = 10;
+        const passwordHash = await bcrypt.hash(tempPassword, saltRounds);
         
         existingUser = await storage.createUser({
           username,
-          password: tempPassword, // We don't need to hash since it's just a simple login
-          email: `${username}@example.com`,
+          passwordHash, // Use the hashed password
+          email: `${username}@example.com`, // Consider making email optional or null if not provided
           name: null,
           avatar: null
         });
       }
       
-      // Log the user in
+      // Log the user in (Passport handles session)
       req.login(existingUser, (err) => {
         if (err) return next(err);
-        res.status(200).json(existingUser);
+        // Return safe user data (omit passwordHash)
+        const { passwordHash, ...safeUser } = existingUser!;
+        res.status(200).json(safeUser);
       });
     } catch (error) {
       next(error);
@@ -55,7 +61,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
       
-      const movies = await storage.getUnwatchedMovies();
+      // Pass the user ID to filter movies based on friends and groups
+      const movies = await storage.getUnwatchedMovies(req.user.id);
       
       // Get proposer details for each movie
       const moviesWithProposers = await Promise.all(
@@ -83,18 +90,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
       
-      // Get the user ID before validation since Zod will reject proposerId if it's undefined
       const userId = req.user?.id;
       if (!userId) {
         return res.status(401).json({ message: "User ID not found" });
       }
       
-      // Add proposerId to the request body before validation
-      const requestData = {
+      // Prepare data including proposerId, tmdbId, and posterPath if provided
+      const requestData: Partial<InsertMovie> & { title: string; groupId: number; proposalIntent: number } = {
         ...req.body,
-        proposerId: userId
+        proposerId: userId,
+        // tmdbId and posterPath will be included from req.body if present
       };
       
+      // Validate against the schema (which now includes tmdbId and posterPath)
       const movieData = insertMovieSchema.parse(requestData);
       const movie = await storage.createMovie(movieData);
       
@@ -158,7 +166,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
       
-      const movies = await storage.getUnwatchedMovies();
+      // Get unwatched movies filtered by the user's friends and groups
+      const movies = await storage.getUnwatchedMovies(req.user.id);
       
       // Filter for movies with both scores
       const scoredMovies = movies.filter((m) => m.interestScore !== undefined);
@@ -611,25 +620,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Query parameter is required" });
       }
       
-      // Simple search among all users
-      const allUsers = Array.from((storage as any).usersMap.values());
-      const matchingUsers = allUsers.filter(user => 
-        user.username.toLowerCase().includes(query.toLowerCase()) ||
-        (user.name && user.name.toLowerCase().includes(query.toLowerCase()))
-      );
+      // Use the new storage method for searching
+      const matchingUsers = await storage.searchUsers(query, req.user.id);
       
-      // Exclude current user and limit to 5 results
-      const filteredUsers = matchingUsers
-        .filter(user => user.id !== req.user.id)
-        .slice(0, 5)
-        .map(user => ({
-          id: user.id,
-          username: user.username,
-          name: user.name,
-          avatar: user.avatar
-        }));
+      // Map to safe user format (no sensitive data)
+      const safeUsers = matchingUsers.map(user => ({
+        id: user.id,
+        username: user.username,
+        name: user.name,
+        avatar: user.avatar
+      }));
       
-      res.json(filteredUsers);
+      res.json(safeUsers);
     } catch (error) {
       next(error);
     }

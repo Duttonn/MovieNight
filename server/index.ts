@@ -71,11 +71,7 @@ app.use((req, res, next) => {
   // ALWAYS try to serve the app on port 5000 first
   // If it's in use, try alternative ports
   const startServer = (port: number, maxRetries = 3, retryCount = 0) => {
-    server.listen({
-      port,
-      host: "0.0.0.0",
-      reusePort: true,
-    })
+    server.listen(port)
     .on("error", (err: any) => {
       if (err.code === "EADDRINUSE" && retryCount < maxRetries) {
         log(`Port ${port} is in use, trying ${port + 1}...`);
