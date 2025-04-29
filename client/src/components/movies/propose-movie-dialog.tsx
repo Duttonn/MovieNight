@@ -3,7 +3,6 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
 import { apiRequest } from "@/lib/queryClient";
-import { getCurrentUser } from "@/hooks/use-auth";
 import {
   Dialog,
   DialogContent,
@@ -36,60 +35,69 @@ type Group = {
 interface ProposeMovieDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  initialTitle?: string; // Added prop
+  tmdbId?: number;       // Added prop
+  posterPath?: string | null; // Added prop
 }
 
 const proposeMovieSchema = z.object({
   title: z.string().min(1, "Title is required").max(100, "Title is too long"),
   groupId: z.string().min(1, "Please select a group"),
   proposalIntent: z.number().min(1).max(4),
+  tmdbId: z.number().optional(), // Added field
+  posterPath: z.string().optional().nullable(), // Added field
 });
 
 type ProposeMovieFormValues = z.infer<typeof proposeMovieSchema>;
 
-export function ProposeMovieDialog({ open, onOpenChange }: ProposeMovieDialogProps) {
+export function ProposeMovieDialog({ 
+  open, 
+  onOpenChange, 
+  initialTitle = "", // Default value
+  tmdbId, 
+  posterPath 
+}: ProposeMovieDialogProps) {
   const { toast } = useToast();
-  const [user, setUser] = useState<any>(null);
   const [proposalIntent, setProposalIntent] = useState(4);
-  const [isUserLoading, setIsUserLoading] = useState(true);
-  
-  // Fetch user data directly instead of using useAuth
-  useEffect(() => {
-    const loadUser = async () => {
-      try {
-        const userData = await getCurrentUser();
-        setUser(userData);
-      } catch (error) {
-        console.error("Error fetching user:", error);
-      } finally {
-        setIsUserLoading(false);
-      }
-    };
-    
-    if (open) {
-      loadUser();
-    }
-  }, [open]);
   
   const { data: groups, isLoading: isLoadingGroups } = useQuery<Group[]>({
     queryKey: ["/api/groups"],
-    enabled: !!user && open && !isUserLoading,
+    enabled: open, // Fetch groups whenever the dialog is open
   });
   
   const form = useForm<ProposeMovieFormValues>({
     resolver: zodResolver(proposeMovieSchema),
+    // Use props for default values
     defaultValues: {
-      title: "",
+      title: initialTitle,
       groupId: "",
       proposalIntent: 4,
+      tmdbId: tmdbId,
+      posterPath: posterPath,
     },
   });
+
+  // Reset form when initialTitle changes (e.g., opening dialog for a different movie)
+  useEffect(() => {
+    form.reset({
+      title: initialTitle,
+      groupId: "",
+      proposalIntent: 4,
+      tmdbId: tmdbId,
+      posterPath: posterPath,
+    });
+    setProposalIntent(4); // Reset rating state as well
+  }, [initialTitle, tmdbId, posterPath, form]);
   
   const proposeMutation = useMutation({
     mutationFn: async (values: ProposeMovieFormValues) => {
+      // Ensure tmdbId and posterPath are included in the payload
       await apiRequest("POST", "/api/movies", {
         title: values.title,
         groupId: parseInt(values.groupId),
         proposalIntent: values.proposalIntent,
+        tmdbId: values.tmdbId,
+        posterPath: values.posterPath,
       });
     },
     onSuccess: () => {
@@ -98,7 +106,7 @@ export function ProposeMovieDialog({ open, onOpenChange }: ProposeMovieDialogPro
         title: "Movie proposed",
         description: "Your movie suggestion has been added successfully.",
       });
-      form.reset();
+      form.reset(); // Reset form on success
       onOpenChange(false);
     },
     onError: (error: Error) => {
@@ -111,7 +119,7 @@ export function ProposeMovieDialog({ open, onOpenChange }: ProposeMovieDialogPro
   });
   
   const onSubmit = (values: ProposeMovieFormValues) => {
-    // Update the intent value from state
+    // Update the intent value from state before submitting
     values.proposalIntent = proposalIntent;
     proposeMutation.mutate(values);
   };
@@ -140,7 +148,8 @@ export function ProposeMovieDialog({ open, onOpenChange }: ProposeMovieDialogPro
                 <FormItem>
                   <FormLabel>Movie Title</FormLabel>
                   <FormControl>
-                    <Input placeholder="Enter movie title" {...field} />
+                    {/* Make input readOnly if proposing from Discover page */}
+                    <Input placeholder="Enter movie title" {...field} readOnly={!!initialTitle} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -155,12 +164,12 @@ export function ProposeMovieDialog({ open, onOpenChange }: ProposeMovieDialogPro
                   <FormLabel>Select Group</FormLabel>
                   <Select 
                     onValueChange={field.onChange} 
-                    defaultValue={field.value}
+                    value={field.value} // Use value prop for controlled component
                     disabled={isLoadingGroups || !groups || groups.length === 0}
                   >
                     <FormControl>
                       <SelectTrigger>
-                        <SelectValue placeholder="Select a movie night group" />
+                        <SelectValue placeholder={isLoadingGroups ? "Loading groups..." : "Select a movie night group"} />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>

@@ -4,6 +4,7 @@ import AuthPage from "@/pages/auth-page";
 import Dashboard from "@/pages/dashboard";
 import Movies from "@/pages/movies";
 import Groups from "@/pages/groups";
+import GroupDetail from "@/pages/group-detail"; // Import the new component
 import Friends from "@/pages/friends";
 import UsernameEntry from "@/pages/username-entry";
 import { ProtectedRoute } from "./lib/protected-route";
@@ -40,7 +41,8 @@ function App() {
           <ProtectedRoute path="/movies" component={Movies} />
           <ProtectedRoute path="/discover" component={Discover} />
           <ProtectedRoute path="/groups" component={Groups} />
-          <ProtectedRoute path="/groups/:id" component={Groups} />
+          {/* Use GroupDetail for the specific group route */}
+          <ProtectedRoute path="/groups/:id" component={GroupDetail} /> 
           <ProtectedRoute path="/friends" component={Friends} />
           <Route path="/auth" component={AuthPage} />
           <Route path="/username" component={UsernameEntry} />

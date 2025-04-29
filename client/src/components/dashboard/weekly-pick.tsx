@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Rating } from "@/components/ui/rating";
-import { Share } from "lucide-react";
+import { Share, PlayCircle, Film } from "lucide-react"; // Added PlayCircle, Film
 
 type User = {
   id: number;
@@ -15,6 +15,7 @@ type User = {
 type TopPickMovie = {
   id: number;
   title: string;
+  posterPath?: string | null; // Added posterPath
   proposerId: number;
   proposedAt: string;
   proposalIntent: number; // 1-4
@@ -31,7 +32,7 @@ export default function WeeklyPick() {
   const { data: topPick, isLoading, error } = useQuery<TopPickMovie | null>({
     queryKey: ["/api/movies/top-pick"],
   });
-  
+
   // Calculate score out of 20 (proposalIntent + interestScore, each 1-4)
   const calculateScore = (movie: TopPickMovie) => {
     if (!movie.interestScore) return 0;
@@ -42,11 +43,11 @@ export default function WeeklyPick() {
     <div className="bg-card border border-border rounded-lg shadow-lg overflow-hidden">
       <div className="p-6">
         <h3 className="text-xl font-bold mb-4">This Week's Top Pick</h3>
-        
+
         {isLoading ? (
           <div className="flex flex-col md:flex-row md:space-x-6">
             <div className="w-full md:w-1/3 mb-4 md:mb-0">
-              <Skeleton className="aspect-w-2 aspect-h-3 rounded-lg h-64 w-full" />
+              <Skeleton className="aspect-[2/3] rounded-lg h-64 w-full" />
             </div>
             <div className="w-full md:w-2/3">
               <Skeleton className="h-8 w-48 mb-2" />
@@ -71,11 +72,21 @@ export default function WeeklyPick() {
         ) : (
           <div className="flex flex-col md:flex-row md:space-x-6">
             <div className="w-full md:w-1/3 mb-4 md:mb-0">
-              <div className="aspect-w-2 aspect-h-3 rounded-lg overflow-hidden bg-secondary/50">
-                {/* Movie poster placeholder - in real app, get from API */}
-                <div className="flex items-center justify-center h-full bg-secondary/50 text-muted-foreground">
-                  <span className="text-lg font-semibold">{topPick.title}</span>
-                </div>
+              {/* Display poster or placeholder */}
+              <div className="aspect-[2/3] rounded-lg overflow-hidden bg-secondary/50">
+                {topPick.posterPath ? (
+                  <img
+                    src={`https://image.tmdb.org/t/p/w500${topPick.posterPath}`}
+                    alt={topPick.title}
+                    className="object-cover w-full h-full"
+                    loading="lazy"
+                  />
+                ) : (
+                  <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+                    <Film className="h-12 w-12 mb-2" />
+                    <span className="text-sm text-center px-2">{topPick.title}</span>
+                  </div>
+                )}
               </div>
             </div>
             <div className="w-full md:w-2/3">
@@ -90,7 +101,7 @@ export default function WeeklyPick() {
               </div>
               <div className="mb-4">
                 <p className="text-muted-foreground">
-                  {/* Movie description placeholder - in real app, get from API */}
+                  {/* Movie description placeholder - TODO: Fetch from TMDB if available */}
                   A compelling movie featuring intense drama and character development.
                 </p>
               </div>
@@ -99,9 +110,9 @@ export default function WeeklyPick() {
                   <span className="text-sm font-medium mr-2">Proposed by:</span>
                   <div className="flex items-center">
                     <Avatar className="h-6 w-6 mr-2">
-                      <AvatarImage 
-                        src={topPick.proposer.avatar} 
-                        alt={topPick.proposer.name || topPick.proposer.username} 
+                      <AvatarImage
+                        src={topPick.proposer.avatar}
+                        alt={topPick.proposer.name || topPick.proposer.username}
                       />
                       <AvatarFallback>
                         {(topPick.proposer.name || topPick.proposer.username).substring(0, 2).toUpperCase()}
@@ -114,10 +125,13 @@ export default function WeeklyPick() {
                 </div>
               </div>
               <div className="flex space-x-3">
-                <Button className="bg-primary text-primary-foreground hover:bg-primary/90">
+                {/* TODO: Implement Watch Now functionality (e.g., link to streaming service or mark as watched) */}
+                <Button disabled className="bg-primary text-primary-foreground hover:bg-primary/90">
+                  <PlayCircle className="h-5 w-5 mr-2" />
                   Watch Now
                 </Button>
-                <Button variant="secondary" className="flex items-center">
+                {/* TODO: Implement Share functionality (e.g., copy link or share via social media) */}
+                <Button disabled variant="secondary" className="flex items-center">
                   <Share className="h-5 w-5 mr-2" />
                   Share
                 </Button>

@@ -10,35 +10,44 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Film, Star, Calendar, Plus } from "lucide-react";
+import { ProposeMovieDialog } from "./propose-movie-dialog"; // Import the dialog
 
 interface MovieCardProps {
   movie: {
     id: number;
     title: string;
     overview: string;
-    posterPath: string;
-    backdropPath: string;
+    posterPath: string | null; // Corrected type
+    backdropPath: string | null; // Corrected type
     releaseDate: string;
     voteAverage: number;
   };
 }
 
 export function MovieCard({ movie }: MovieCardProps) {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [isProposeOpen, setIsProposeOpen] = useState(false); // State for propose dialog
+
   const posterUrl = movie.posterPath 
     ? `https://image.tmdb.org/t/p/w500${movie.posterPath}`
     : null;
   const backdropUrl = movie.backdropPath
     ? `https://image.tmdb.org/t/p/original${movie.backdropPath}`
     : null;
-  const releaseYear = new Date(movie.releaseDate).getFullYear();
+  // Handle potential invalid date string
+  const releaseYear = movie.releaseDate ? new Date(movie.releaseDate).getFullYear() : 'N/A';
   const formattedRating = movie.voteAverage ? movie.voteAverage.toFixed(1) : 'N/A';
+
+  const handleProposeClick = () => {
+    setIsDetailOpen(false); // Close detail dialog
+    setIsProposeOpen(true); // Open propose dialog
+  };
 
   return (
     <>
       <Card 
         className="group cursor-pointer overflow-hidden transition-all hover:scale-[1.02] hover:shadow-lg"
-        onClick={() => setIsOpen(true)}
+        onClick={() => setIsDetailOpen(true)} // Open detail dialog on card click
       >
         <div className="relative aspect-[2/3]">
           {posterUrl ? (
@@ -67,7 +76,8 @@ export function MovieCard({ movie }: MovieCardProps) {
         </div>
       </Card>
 
-      <Dialog open={isOpen} onOpenChange={setIsOpen}>
+      {/* Detail Dialog */}
+      <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
         <DialogContent className="max-w-3xl h-[90vh] overflow-y-auto">
           <div className="relative aspect-video mb-4 bg-black rounded-t-lg overflow-hidden">
             {backdropUrl ? (
@@ -109,13 +119,25 @@ export function MovieCard({ movie }: MovieCardProps) {
           </DialogHeader>
 
           <div className="mt-6">
-            <Button className="w-full" onClick={() => {/* Open propose movie dialog */}}>
+            {/* Updated Button onClick */}
+            <Button className="w-full" onClick={handleProposeClick}>
               <Plus className="h-4 w-4 mr-2" />
               Propose Movie
             </Button>
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Propose Movie Dialog - Render conditionally */}
+      {isProposeOpen && (
+        <ProposeMovieDialog
+          open={isProposeOpen}
+          onOpenChange={setIsProposeOpen}
+          initialTitle={movie.title}
+          tmdbId={movie.id} // Pass TMDB ID
+          posterPath={movie.posterPath} // Pass poster path
+        />
+      )}
     </>
   );
 }
