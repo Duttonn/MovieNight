@@ -8,6 +8,7 @@ import GroupDetail from "@/pages/group-detail";
 import Friends from "@/pages/friends";
 import UsernameEntry from "@/pages/username-entry";
 import Schedule from "@/pages/schedule";
+import Settings from "@/pages/settings";
 import { ProtectedRoute } from "./lib/protected-route";
 import Sidebar from "./components/layout/sidebar";
 import MobileNav from "./components/layout/mobile-nav";
@@ -45,6 +46,7 @@ function App() {
           <ProtectedRoute path="/groups/:id" component={GroupDetail} /> 
           <ProtectedRoute path="/friends" component={Friends} />
           <ProtectedRoute path="/schedule" component={Schedule} />
+          <ProtectedRoute path="/settings" component={Settings} />
           <Route path="/auth" component={AuthPage} />
           <Route path="/username" component={UsernameEntry} />
           <Route component={NotFound} />
