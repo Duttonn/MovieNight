@@ -60,14 +60,14 @@ export default function Schedule() {
     const headerCells = calendarRef.current.querySelectorAll('thead tr th');
     headerCells.forEach((cell, idx) => {
       cell.style.cursor = 'pointer';
-      cell.onclick = () => handleDayHeaderClick(idx);
+      cell.ondblclick = () => handleDayHeaderClick(idx);
       cell.setAttribute('tabindex', '0');
       cell.setAttribute('aria-label', `Schedule recurring movie night for ${DAYS_OF_WEEK[idx]}`);
     });
     // Cleanup
     return () => {
       headerCells.forEach(cell => {
-        cell.onclick = null;
+        cell.ondblclick = null;
       });
     };
   }, [calendarRef.current]);
@@ -154,7 +154,7 @@ export default function Schedule() {
           `hover:bg-accent focus:bg-accent cursor-pointer select-none outline-none`
         }
         style={{ minHeight: 40 }}
-        onClick={e => {
+        onDoubleClick={e => {
           e.stopPropagation();
           handleDateSelect(day);
         }}
@@ -242,11 +242,11 @@ export default function Schedule() {
                   </div>
                   <div className="flex items-center gap-1">
                     <CalendarIcon className="h-4 w-4" />
-                    <span>Click on a day to schedule a one-time movie night</span>
+                    <span>Double-click on a day to schedule a one-time movie night</span>
                   </div>
                   <div className="flex items-center gap-1">
                     <CalendarClock className="h-4 w-4" />
-                    <span>Click on day names for weekly events</span>
+                    <span>Double-click on day names for weekly events</span>
                   </div>
                 </div>
               </div>
