@@ -4,12 +4,14 @@ import { setupAuth } from "./auth";
 import { storage } from "./storage";
 import { z } from "zod";
 import bcrypt from 'bcrypt'; // Import bcrypt
+import * as schema from '@shared/schema'; // Import schema namespace
+import { eq } from 'drizzle-orm'; // Import eq
 import { 
   insertMovieSchema, 
   insertGroupSchema,
   insertGroupMemberSchema,
   insertFriendRequestSchema,
-  type InsertMovie // Import InsertMovie type
+  type InsertMovie,
 } from "@shared/schema";
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -142,20 +144,72 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
       
       const { id } = req.params;
-      const { notes, personalRating } = req.body;
+      const { notes, personalRating } = req.body; // Optional fields from dialog
       
       const movie = await storage.getMovie(Number(id));
       if (!movie) {
         return res.status(404).json({ message: "Movie not found" });
       }
       
+      // Check if user is part of the group the movie belongs to
+      if (movie.groupId) {
+        const members = await storage.getGroupMembers(movie.groupId);
+        if (!members.some((m: { userId: number }) => m.userId === req.user.id)) {
+          return res.status(403).json({ message: "User not in group" });
+        }
+      }
+
       const updatedMovie = await storage.updateMovie(Number(id), {
         watched: true,
         watchedAt: new Date(),
-        notes,
-        personalRating
+        notes: notes,
+        personalRating: personalRating
       });
-      
+
+      // Handle proposer rotation and movie transition
+      if (movie.groupId) {
+        const group = await storage.getGroup(movie.groupId);
+        if (group) {
+          const groupMembers = await storage.getGroupMembers(group.id);
+          const memberCount = groupMembers.length;
+          
+          if (memberCount > 0) {
+            // Get current proposer ID
+            const currentProposerIndex = group.currentProposerIndex;
+            const currentProposerId = groupMembers[currentProposerIndex]?.userId;
+            
+            // Calculate next proposer index and ID
+            const nextIndex = (currentProposerIndex + 1) % memberCount;
+            const nextProposerId = groupMembers[nextIndex]?.userId;
+            
+            if (currentProposerId && nextProposerId) {
+              console.log(`Rotating from proposer ${currentProposerId} to ${nextProposerId}`);
+              
+              // 1. Get all movies for the group
+              const groupMovies = await storage.getMoviesByGroup(movie.groupId);
+              const unwatchedMovies = groupMovies.filter(m => !m.watched);
+              
+              // 2. Delete all unwatched movies from current proposer
+              const currentProposerUnwatchedMovies = unwatchedMovies.filter(
+                m => m.proposerId === currentProposerId
+              );
+              
+              for (const movieToDelete of currentProposerUnwatchedMovies) {
+                console.log(`Removing movie ${movieToDelete.id} "${movieToDelete.title}" from previous proposer's list`);
+                await storage.deleteMovie(movieToDelete.id);
+              }
+            }
+            
+            // Update the group with new proposer index and clear decided movie
+            await storage.updateGroup(group.id, {
+              currentProposerIndex: nextIndex,
+              lastMovieNight: new Date(),
+              decidedMovieId: null, // Clear the decided movie
+            });
+          }
+        }
+      }
+
       res.json(updatedMovie);
     } catch (error) {
       next(error);
@@ -217,6 +271,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
       next(error);
     }
   });
+  
+  // DELETE endpoint for removing a movie
+  app.delete("/api/movies/:id", async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
+      
+      const movieId = Number(req.params.id);
+      const movie = await storage.getMovie(movieId);
+      
+      if (!movie) {
+        return res.status(404).json({ message: "Movie not found" });
+      }
+      
+      // Check if the user is the proposer of the movie
+      if (movie.proposerId !== req.user.id) {
+        return res.status(403).json({ message: "Only the proposer can delete this movie" });
+      }
+      
+      // Prevent deletion of watched movies
+      if (movie.watched) {
+        return res.status(400).json({ message: "Cannot delete movies that have been watched" });
+      }
+      
+      // If this is the decided movie for a group, clear that reference first
+      if (movie.groupId) {
+        const group = await storage.getGroup(movie.groupId);
+        if (group && group.decidedMovieId === movie.id) {
+          await storage.updateGroup(movie.groupId, { decidedMovieId: null });
+        }
+      }
+      
+      // Delete the movie
+      await storage.deleteMovie(movieId);
+      res.status(204).send(); // No content response on successful deletion
+    } catch (error) {
+      next(error);
+    }
+  });
 
   // Groups API
   app.get("/api/groups", async (req, res, next) => {
@@ -254,36 +346,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Add endpoint for fetching a single group by ID
+  // Add endpoint for fetching a single group by ID (Modified to include decidedMovie)
   app.get("/api/groups/:id", async (req, res, next) => {
     try {
       if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
       
       const { id } = req.params;
-      const group = await storage.getGroup(Number(id));
+      const groupId = Number(id);
       
-      if (!group) {
+      // Use a single query to get group and related data
+      const result = await storage.db.query.groups.findFirst({
+        where: eq(schema.groups.id, groupId), // Used schema.groups.id
+        with: {
+          members: {
+            with: {
+              user: true // Fetch user details for each member
+            }
+          },
+          decidedMovie: { // Fetch the decided movie details
+            with: {
+              proposer: true // Include proposer details for the decided movie
+            }
+          }
+        }
+      });
+
+      if (!result) {
         return res.status(404).json({ message: "Group not found" });
       }
-      
-      // Get group members
-      const groupMembers = await storage.getGroupMembers(group.id);
-      const members = await Promise.all(
-        groupMembers.map(async (member) => {
-          const user = await storage.getUser(member.userId);
-          return user ? {
-            id: user.id,
-            username: user.username,
-            name: user.name,
-            avatar: user.avatar
-          } : null;
-        })
-      );
-      
-      res.json({
-        ...group,
-        members: members.filter(Boolean)
-      });
+
+      // Check if the requesting user is a member of the group
+      const isMember = result.members.some((m: { userId: number }) => m.userId === req.user.id); // Added type for m
+      if (!isMember) {
+        return res.status(403).json({ message: "User not authorized for this group" });
+      }
+
+      // Format the response to match expected frontend structure
+      const formattedGroup = {
+        ...result,
+        members: result.members.map((m: { user: schema.User }) => ({ // Added type for m
+          id: m.user.id,
+          username: m.user.username,
+          name: m.user.name,
+          avatar: m.user.avatar
+        })),
+        // Add posterUrl to decidedMovie if it exists
+        decidedMovie: result.decidedMovie ? {
+          ...result.decidedMovie,
+          posterUrl: result.decidedMovie.posterPath ? `https://image.tmdb.org/t/p/w500${result.decidedMovie.posterPath}` : null,
+          // Format proposer for decided movie
+          proposer: result.decidedMovie.proposer ? {
+            id: result.decidedMovie.proposer.id,
+            username: result.decidedMovie.proposer.username,
+            name: result.decidedMovie.proposer.name,
+            avatar: result.decidedMovie.proposer.avatar
+          } : undefined
+        } : null
+      };
+
+      res.json(formattedGroup);
     } catch (error) {
       next(error);
     }
@@ -416,86 +537,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/groups/:id/next-movie-night", async (req, res, next) => {
+  // NEW: Endpoint to set the decided movie for a group
+  app.patch("/api/groups/:id/decide", async (req, res, next) => {
+    console.log(`[PATCH /api/groups/${req.params.id}/decide] Received request`); // Log entry
     try {
-      if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
-      
-      const { id } = req.params;
-      const group = await storage.getGroup(Number(id));
-      
+      if (!req.isAuthenticated()) {
+        console.log(`[PATCH /api/groups/${req.params.id}/decide] Authentication failed`);
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+
+      const groupId = Number(req.params.id);
+      const { movieId } = req.body;
+      console.log(`[PATCH /api/groups/${groupId}/decide] Request body:`, req.body); // Log body
+
+      if (movieId === undefined) { 
+        console.log(`[PATCH /api/groups/${groupId}/decide] movieId is undefined`);
+        return res.status(400).json({ message: "movieId is required" });
+      }
+
+      // Validate movieId (optional: check if movie exists and belongs to group)
+      if (movieId !== null) {
+        console.log(`[PATCH /api/groups/${groupId}/decide] Validating movieId: ${movieId}`);
+        const movie = await storage.getMovie(Number(movieId));
+        if (!movie) {
+          console.log(`[PATCH /api/groups/${groupId}/decide] Movie ${movieId} not found`);
+          return res.status(400).json({ message: "Invalid movie ID" });
+        }
+        if (movie.groupId !== groupId) {
+          console.log(`[PATCH /api/groups/${groupId}/decide] Movie ${movieId} does not belong to group ${groupId}`);
+          return res.status(400).json({ message: "Movie does not belong to this group" });
+        }
+        console.log(`[PATCH /api/groups/${groupId}/decide] Movie ${movieId} validation passed`);
+      }
+
+      // Check if user is a member of the group
+      console.log(`[PATCH /api/groups/${groupId}/decide] Checking group membership for user ${req.user.id}`);
+      const group = await storage.getGroup(groupId);
       if (!group) {
+        console.log(`[PATCH /api/groups/${groupId}/decide] Group ${groupId} not found`);
         return res.status(404).json({ message: "Group not found" });
       }
-      
-      let nextDate: Date;
-
-      if (group.scheduleType === "oneoff") {
-        nextDate = group.scheduleDate!;
-      } else {
-        // Calculate next occurrence of the scheduled day
-        const today = new Date();
-        const targetDay = group.scheduleDay!;
-        const daysUntilNext = (targetDay - today.getDay() + 7) % 7;
-        const nextDay = new Date(today);
-        nextDay.setDate(today.getDate() + daysUntilNext);
-        
-        // Set the time
-        const [hours, minutes] = group.scheduleTime.split(':').map(Number);
-        nextDay.setHours(hours, minutes, 0, 0);
-        
-        nextDate = nextDay;
+      const members = await storage.getGroupMembers(groupId);
+      if (!members.some((m: { userId: number }) => m.userId === req.user.id)) { 
+        console.log(`[PATCH /api/groups/${groupId}/decide] User ${req.user.id} is not a member`);
+        return res.status(403).json({ message: "User not authorized for this group" });
       }
-      
-      // Get group members to find the current proposer
-      const groupMembers = await storage.getGroupMembers(group.id);
-      const memberIds = groupMembers.map(member => member.userId);
-      
-      // Get the current proposer index (clamped to valid range)
-      const currentIndex = Math.min(group.currentProposerIndex, memberIds.length - 1);
-      const proposerId = memberIds[currentIndex];
-      
-      // Get proposer details
-      const proposer = await storage.getUser(proposerId);
-      
-      res.json({
-        date: nextDate,
-        proposer: proposer ? {
-          id: proposer.id,
-          username: proposer.username,
-          name: proposer.name,
-          avatar: proposer.avatar
-        } : null
-      });
-    } catch (error) {
-      next(error);
-    }
-  });
+      console.log(`[PATCH /api/groups/${groupId}/decide] User ${req.user.id} membership confirmed`);
 
-  app.patch("/api/groups/:id/update-movie-night", async (req, res, next) => {
-    try {
-      if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
-      
-      const { id } = req.params;
-      const group = await storage.getGroup(Number(id));
-      
-      if (!group) {
-        return res.status(404).json({ message: "Group not found" });
-      }
-      
-      // Get group members to calculate next proposer
-      const groupMembers = await storage.getGroupMembers(group.id);
-      const memberCount = groupMembers.length;
-      
-      // Update the proposer index
-      const nextIndex = (group.currentProposerIndex + 1) % memberCount;
-      
-      const updatedGroup = await storage.updateGroup(Number(id), {
-        currentProposerIndex: nextIndex,
-        lastMovieNight: new Date()
-      });
-      
+      // Update the group with the decided movie ID
+      const updatePayload = { decidedMovieId: movieId === null ? null : Number(movieId) };
+      console.log(`[PATCH /api/groups/${groupId}/decide] Updating group with payload:`, updatePayload);
+      const updatedGroup = await storage.updateGroup(groupId, updatePayload);
+      console.log(`[PATCH /api/groups/${groupId}/decide] Group updated successfully:`, updatedGroup);
+
       res.json(updatedGroup);
     } catch (error) {
+      console.error(`[PATCH /api/groups/${req.params.id}/decide] Error:`, error); // Log error
       next(error);
     }
   });
@@ -643,6 +740,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  const httpServer = createServer(app);
-  return httpServer;
+  // Error handling middleware (ensure it's registered after all routes)
+  app.use((err: any, req: any, res: any, next: any) => {
+    console.error("Unhandled error:", err);
+    if (err instanceof z.ZodError) {
+      return res.status(400).json({ message: "Validation failed", errors: err.errors });
+    }
+    res.status(500).json({ message: err.message || "Internal Server Error" });
+  });
+
+  const server = createServer(app);
+  return server;
 }

@@ -26,6 +26,7 @@ export interface IStorage {
   getUnwatchedMovies(userId: number): Promise<schema.Movie[]>; // Updated to accept userId
   createMovie(movie: schema.InsertMovie): Promise<schema.Movie>;
   updateMovie(id: number, updates: Partial<schema.Movie>): Promise<schema.Movie | undefined>;
+  deleteMovie(id: number): Promise<void>; // New operation for deleting a movie
 
   // Group operations
   getGroup(id: number): Promise<schema.Group | undefined>;
@@ -52,7 +53,7 @@ export interface IStorage {
 
 // Drizzle/SQLite implementation
 class DrizzleStorage implements IStorage {
-  private db;
+  public db; // Made public to allow access from routes.ts
   sessionStore: session.SessionStore;
 
   constructor() {
@@ -162,6 +163,10 @@ class DrizzleStorage implements IStorage {
   async updateMovie(id: number, updates: Partial<schema.Movie>): Promise<schema.Movie | undefined> {
     const result = await this.db.update(schema.movies).set(updates).where(eq(schema.movies.id, id)).returning();
     return result[0];
+  }
+
+  async deleteMovie(id: number): Promise<void> {
+    await this.db.delete(schema.movies).where(eq(schema.movies.id, id));
   }
 
   // --- Group Operations ---

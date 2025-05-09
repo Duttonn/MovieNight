@@ -18,8 +18,9 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { Check, Film, Star, Calendar, Youtube } from "lucide-react";
+import { Check, Film, Star, Calendar, Youtube, X } from "lucide-react";
 import type { Movie as SharedMovie, User as SharedUser } from "@shared/schema";
+import { useAuth } from "@/hooks/use-auth";
 
 // Define the expected shape of the movie prop, including the nested proposer
 interface SuggestionMovieCardProps {
@@ -29,7 +30,7 @@ interface SuggestionMovieCardProps {
   compact?: boolean;
 }
 
-export function SuggestionMovieCard({ movie, compact = false }: SuggestionMovieCardProps) {
+export function SuggestionMovieCard({ movie, compact = false, onRemove }: SuggestionMovieCardProps & { onRemove?: () => void }) {
   const { toast } = useToast();
   const [isWatchedDialogOpen, setIsWatchedDialogOpen] = useState(false);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
@@ -61,9 +62,14 @@ export function SuggestionMovieCard({ movie, compact = false }: SuggestionMovieC
   const watchMutation = useMutation({
     mutationFn: async ({ movieId, notes, personalRating }: { movieId: number, notes: string, personalRating: number }) => {
       await apiRequest("PATCH", `/api/movies/${movieId}/watch`, { notes, personalRating });
+      // Rotate proposer after marking as watched
+      if (movie.groupId) {
+        await apiRequest("POST", `/api/groups/${movie.groupId}/rotate-proposer`, {});
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/movies"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/groups"] });
       setIsWatchedDialogOpen(false);
       toast({
         title: "Movie marked as watched",
@@ -104,7 +110,7 @@ export function SuggestionMovieCard({ movie, compact = false }: SuggestionMovieC
       // Use the search endpoint to get movie details
       const searchResponse = await searchMovies(movie.title);
       const matchingMovie = searchResponse.results.find(
-        (result) => (movie.tmdbId && result.id === movie.tmdbId) || 
+        (result: any) => (movie.tmdbId && result.id === movie.tmdbId) || 
                     result.title.toLowerCase() === movie.title.toLowerCase()
       );
       
@@ -129,12 +135,31 @@ export function SuggestionMovieCard({ movie, compact = false }: SuggestionMovieC
     ? `https://image.tmdb.org/t/p/w500${movie.posterPath}`
     : null;
 
+  const { user } = useAuth();
+  const isCurrentUserProposer = user?.id === movie.proposer?.id;
+
   return (
     <>
       <Card 
-        className={`bg-secondary/20 rounded-lg overflow-hidden border border-border ${compact ? 'h-full' : ''} cursor-pointer hover:shadow-md transition-shadow`}
+        className={`bg-secondary/20 rounded-lg overflow-hidden border border-border ${compact ? 'h-full' : ''} cursor-pointer hover:shadow-md transition-shadow relative`}
         onClick={handleMovieClick}
       >
+        {/* Remove button for current proposer */}
+        {onRemove && isCurrentUserProposer && !movie.watched && (
+          <Button
+            variant="destructive"
+            size="icon"
+            className="absolute top-2 right-2 z-10 h-6 w-6 rounded-full opacity-90 hover:opacity-100 shadow-sm"
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              onRemove();
+            }}
+            aria-label="Remove movie"
+          >
+            <X className="h-3 w-3" />
+          </Button>
+        )}
         {/* Display Poster or Placeholder */}
         <div className="aspect-[2/3] w-full bg-secondary/50">
           {posterUrl ? (
@@ -156,7 +181,7 @@ export function SuggestionMovieCard({ movie, compact = false }: SuggestionMovieC
           <div className="flex justify-between items-center mb-3">
             <div className="flex">
               {/* Display Proposal Intent Rating */}
-              <Rating value={movie.proposalIntent} max={4} readOnly size="sm" tooltipPrefix="Proposer's intent: " />
+              <Rating value={movie.proposalIntent} max={4} readOnly size="sm" />
             </div>
             <span className="text-xs text-muted-foreground truncate">
               By {movie.proposer?.name || movie.proposer?.username || "Unknown"}
@@ -167,32 +192,16 @@ export function SuggestionMovieCard({ movie, compact = false }: SuggestionMovieC
               Your interest:
             </div>
             {/* Display Interest Score Rating (Editable) */}
-            <Rating
-              value={movie.interestScore ?? undefined} // Use ?? undefined to handle null/0 correctly
-              onChange={(rating) => {
-                handleRating(rating);
-                event?.stopPropagation(); // Prevent card click when rating
-              }}
-              disabled={rateMutation.isPending || movie.watched}
-              tooltipPrefix="Your interest: "
-            />
+            <div onClick={(e) => e.stopPropagation()}>
+              <Rating
+                value={movie.interestScore ?? undefined} // Use ?? undefined to handle null/0 correctly
+                onChange={(rating) => {
+                  handleRating(rating);
+                }}
+                readOnly={rateMutation.isPending || !!movie.watched}
+              />
+            </div>
           </div>
-          
-          {/* Show Mark as Watched button only if not compact and not watched */}
-          {!compact && !movie.watched && (
-            <Button 
-              variant="outline" 
-              size="sm" 
-              className="w-full mt-4"
-              onClick={(e) => {
-                e.stopPropagation(); // Prevent card click
-                setIsWatchedDialogOpen(true);
-              }}
-            >
-              <Check className="h-4 w-4 mr-2" />
-              Mark as Watched
-            </Button>
-          )}
           
           {/* Show Watched indicator if watched */}
           {!compact && movie.watched && (
@@ -204,7 +213,7 @@ export function SuggestionMovieCard({ movie, compact = false }: SuggestionMovieC
               {/* Optionally display personal rating and notes here */}
               {movie.personalRating && (
                 <div className="mt-1 flex items-center">
-                  <Rating value={movie.personalRating} max={5} readOnly size="xs" />
+                  <Rating value={movie.personalRating} max={5} readOnly size="sm" />
                 </div>
               )}
               {movie.notes && (
@@ -378,7 +387,6 @@ export function SuggestionMovieCard({ movie, compact = false }: SuggestionMovieC
                 value={personalRating}
                 onChange={setPersonalRating}
                 max={5}
-                tooltipPrefix="Your rating: "
               />
             </div>
             <div className="space-y-2">

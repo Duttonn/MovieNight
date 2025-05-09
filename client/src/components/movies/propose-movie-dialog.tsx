@@ -145,8 +145,15 @@ export function ProposeMovieDialog({
         posterPath: values.posterPath,
       });
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/movies"] });
+      // Invalidate group-specific movies query if groupId is present
+      if (variables && variables.groupId) {
+        const groupId = parseInt(variables.groupId);
+        if (!isNaN(groupId)) {
+          queryClient.invalidateQueries({ queryKey: ["movies", groupId] });
+        }
+      }
       toast({
         title: "Movie proposed",
         description: "Your movie suggestion has been added successfully.",
