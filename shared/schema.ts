@@ -65,11 +65,17 @@ export const groups = sqliteTable("groups", {
   scheduleDate: integer("schedule_date", { mode: "timestamp" }), // Use integer for SQLite timestamp
   currentProposerIndex: integer("current_proposer_index").default(0),
   lastMovieNight: integer("last_movie_night", { mode: "timestamp" }), // Use integer for SQLite timestamp
+  decidedMovieId: integer("decided_movie_id").references(() => movies.id, { onDelete: 'set null' }), // Added: ID of the chosen movie
 });
 
-export const groupsRelations = relations(groups, ({ many }) => ({
+export const groupsRelations = relations(groups, ({ many, one }) => ({
   members: many(groupMembers),
   movies: many(movies),
+  decidedMovie: one(movies, {
+    fields: [groups.decidedMovieId],
+    references: [movies.id],
+    relationName: 'decidedMovie'
+  }),
 }));
 
 // Group Members Table (Junction Table)
@@ -187,6 +193,7 @@ export const insertGroupSchema = createInsertSchema(groups, {
   scheduleDay: z.number().min(0).max(6).optional(),
   scheduleTime: z.string().regex(/^\d{2}:\d{2}$/, "Invalid time format (HH:MM)").optional(),
   scheduleDate: z.date().optional(),
+  decidedMovieId: z.number().positive().optional().nullable(), // Added validation
 }).omit({ id: true, currentProposerIndex: true, lastMovieNight: true });
 
 export const insertGroupMemberSchema = createInsertSchema(groupMembers).omit({ id: true });
