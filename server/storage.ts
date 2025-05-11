@@ -57,7 +57,21 @@ class DrizzleStorage implements IStorage {
   sessionStore: session.SessionStore;
 
   constructor() {
-    const sqliteClient = createClient({ url: "file:./local.db" });
+    // Connect to Turso database using environment variables
+    const dbUrl = process.env.DATABASE_URL || "file:./local.db";
+    const authToken = process.env.DATABASE_AUTH_TOKEN;
+
+    // Log which database we're connecting to
+    const isTurso = dbUrl.includes('turso.io');
+    console.log(`Database connection: ${isTurso ? 'Turso Cloud Database' : 'Local SQLite Database'}`);
+    console.log(`Database URL: ${dbUrl}`);
+    
+    // Create client with appropriate configuration based on environment
+    const sqliteClient = createClient({ 
+      url: dbUrl,
+      ...(authToken ? { authToken } : {})
+    });
+    
     this.db = drizzle(sqliteClient, { schema }); // Use the imported schema
 
     this.sessionStore = new MemoryStore({

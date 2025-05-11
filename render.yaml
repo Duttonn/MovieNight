@@ -1,0 +1,20 @@
+services:
+  # A web service for your MovieNight application
+  - type: web
+    name: movienight
+    env: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: TMDB_API_KEY
+        sync: false
+      - key: TMDB_ACCESS_TOKEN
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+    healthCheckPath: /
