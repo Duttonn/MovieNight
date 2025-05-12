@@ -17,6 +17,7 @@ export interface IStorage {
   getUserByUsername(username: string): Promise<schema.User | undefined>;
   getUserByEmail(email: string): Promise<schema.User | undefined>;
   createUser(user: schema.InsertUser): Promise<schema.User>;
+  updateUser(id: number, updates: Partial<schema.User>): Promise<schema.User>; // Added updateUser method
   searchUsers(query: string, excludeUserId: number): Promise<schema.User[]>;
 
   // Movie operations
@@ -140,6 +141,20 @@ class DrizzleStorage implements IStorage {
   async createUser(insertUser: schema.InsertUser): Promise<schema.User> {
     const result = await this.db.insert(schema.users).values(insertUser).returning();
      if (!result || result.length === 0) throw new Error("Failed to create user");
+    return result[0];
+  }
+  
+  // New updateUser method implementation
+  async updateUser(id: number, updates: Partial<schema.User>): Promise<schema.User> {
+    const result = await this.db.update(schema.users)
+      .set({
+        ...updates,
+        updatedAt: new Date() // Automatically update the updatedAt timestamp
+      })
+      .where(eq(schema.users.id, id))
+      .returning();
+      
+    if (!result || result.length === 0) throw new Error("Failed to update user");
     return result[0];
   }
 

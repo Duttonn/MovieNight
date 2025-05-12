@@ -36,6 +36,11 @@ export async function setupVite(app: Express, server: Server) {
     customLogger: {
       ...viteLogger,
       error: (msg, options) => {
+        // Don't exit the process for URI malformed errors
+        if (msg.includes('URI malformed')) {
+          viteLogger.error(`URI malformed error: ${msg}`, options);
+          return;
+        }
         viteLogger.error(msg, options);
         process.exit(1);
       },
@@ -44,11 +49,38 @@ export async function setupVite(app: Express, server: Server) {
     appType: "custom",
   });
 
+  // Add error handling middleware for Vite
+  app.use((req, res, next) => {
+    try {
+      // Try to decode the URL to catch malformed URIs before they reach Vite
+      if (req.url) {
+        try {
+          decodeURI(req.url);
+        } catch (e) {
+          // If URL is malformed, use a sanitized version
+          log(`Malformed URL detected: ${req.url}`, "vite-error-handler");
+          req.url = encodeURI(req.url).replace(/%25/g, '%');
+        }
+      }
+      next();
+    } catch (err) {
+      next(err);
+    }
+  });
+  
   app.use(vite.middlewares);
   app.use("*", async (req, res, next) => {
-    const url = req.originalUrl;
+    let url = req.originalUrl;
 
     try {
+      // Sanitize URL before processing
+      try {
+        decodeURI(url);
+      } catch (e) {
+        url = '/'; // Redirect to home if URL is malformed
+        log(`Malformed URL in catch-all handler, redirecting to home`, "vite-handler");
+      }
+
       const clientTemplate = path.resolve(
         __dirname,
         "..",

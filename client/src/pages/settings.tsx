@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, ChangeEvent } from "react";
 import { getCurrentUser } from "@/hooks/use-auth";
 import { User } from "@shared/schema";
 import { Loader2, Save } from "lucide-react";
@@ -11,11 +11,14 @@ import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { toast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 
 export default function Settings() {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Form state
   const [name, setName] = useState("");
@@ -54,21 +57,25 @@ export default function Settings() {
   const handleSaveProfile = async () => {
     setIsSaving(true);
     try {
-      // This would be an API call to update user profile
-      // For now we'll simulate a successful update
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Make actual API call to update user profile
+      const response = await apiRequest("PATCH", "/api/user", {
+        name,
+        email,
+        username,
+        avatar
+      });
       
-      // Update local state
-      if (user) {
-        const updatedUser = {
-          ...user,
-          name,
-          email,
-          username,
-          avatar,
-        };
-        setUser(updatedUser);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to update profile");
       }
+      
+      // Update local state with updated user data
+      const updatedUser = await response.json();
+      setUser(updatedUser);
+      
+      // Update the cache with the user
+      queryClient.setQueryData(["/api/user"], updatedUser);
       
       toast({
         title: "Profile updated",
@@ -77,7 +84,7 @@ export default function Settings() {
     } catch (error) {
       toast({
         title: "Error",
-        description: "Failed to update profile. Please try again.",
+        description: error instanceof Error ? error.message : "Failed to update profile. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -88,17 +95,27 @@ export default function Settings() {
   const handleSaveNotifications = async () => {
     setIsSaving(true);
     try {
-      // This would be an API call to update notification preferences
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Make actual API call to update notification preferences
+      const response = await apiRequest("PATCH", "/api/user/preferences", {
+        emailNotifications,
+        pushNotifications,
+      });
       
-      // Update local state
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to update preferences");
+      }
+      
+      // Update local state with updated user data
+      const updatedPreferences = await response.json();
+      
       if (user) {
         const updatedUser = {
           ...user,
-          emailNotifications,
-          pushNotifications,
+          ...updatedPreferences
         };
         setUser(updatedUser);
+        queryClient.setQueryData(["/api/user"], updatedUser);
       }
       
       toast({
@@ -108,11 +125,107 @@ export default function Settings() {
     } catch (error) {
       toast({
         title: "Error",
-        description: "Failed to update preferences. Please try again.",
+        description: error instanceof Error ? error.message : "Failed to update preferences. Please try again.",
         variant: "destructive",
       });
     } finally {
       setIsSaving(false);
+    }
+  };
+  
+  // Handle avatar file upload
+  const handleAvatarChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      toast({
+        title: "Invalid file type",
+        description: "Please select an image file",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    // Validate file size (max 2MB)
+    if (file.size > 2 * 1024 * 1024) {
+      toast({
+        title: "File too large",
+        description: "Please select an image smaller than 2MB",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    setIsUploadingAvatar(true);
+    
+    try {
+      // Create a FormData object to send the file
+      const formData = new FormData();
+      formData.append('avatar', file);
+      
+      // Send the file to the server
+      const response = await fetch('/api/user/avatar', {
+        method: 'POST',
+        body: formData,
+        credentials: 'include'
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to upload avatar");
+      }
+      
+      // Get the URL of the uploaded avatar
+      const data = await response.json();
+      setAvatar(data.avatarUrl);
+      
+      toast({
+        title: "Avatar updated",
+        description: "Your avatar has been updated successfully",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to upload avatar. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsUploadingAvatar(false);
+      // Reset the file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+  
+  const handleRemoveAvatar = async () => {
+    setIsUploadingAvatar(true);
+    try {
+      // Send request to remove avatar
+      const response = await apiRequest("DELETE", "/api/user/avatar", {});
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to remove avatar");
+      }
+      
+      // Clear the avatar url
+      setAvatar("");
+      
+      toast({
+        title: "Avatar removed",
+        description: "Your avatar has been removed successfully",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to remove avatar. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsUploadingAvatar(false);
     }
   };
   
@@ -176,12 +289,36 @@ export default function Settings() {
                     <div className="space-y-2">
                       <h3 className="text-xl font-medium">{name || username}</h3>
                       <div className="flex flex-col sm:flex-row gap-2">
-                        <Button variant="outline" size="sm">
-                          Change Avatar
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => fileInputRef.current?.click()}
+                          disabled={isUploadingAvatar}
+                        >
+                          {isUploadingAvatar ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Uploading...
+                            </>
+                          ) : (
+                            "Change Avatar"
+                          )}
                         </Button>
-                        <Button variant="outline" size="sm">
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={handleRemoveAvatar}
+                          disabled={isUploadingAvatar || !avatar}
+                        >
                           Remove Avatar
                         </Button>
+                        <input
+                          type="file"
+                          ref={fileInputRef}
+                          className="hidden"
+                          accept="image/*"
+                          onChange={handleAvatarChange}
+                        />
                       </div>
                     </div>
                   </div>

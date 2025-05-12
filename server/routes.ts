@@ -13,10 +13,201 @@ import {
   insertFriendRequestSchema,
   type InsertMovie,
 } from "@shared/schema";
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+
+// ES module replacement for __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Configure multer for file uploads
+  const avatarStorage = multer.diskStorage({
+    destination: function (req, file, cb) {
+      const uploadDir = path.join(__dirname, '..', 'public', 'avatars');
+      // Create directory if it doesn't exist
+      if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+      }
+      cb(null, uploadDir);
+    },
+    filename: function (req, file, cb) {
+      const userId = req.user?.id;
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+      const ext = path.extname(file.originalname);
+      cb(null, `avatar-${userId}-${uniqueSuffix}${ext}`);
+    }
+  });
+  
+  const upload = multer({ 
+    storage: avatarStorage,
+    limits: {
+      fileSize: 2 * 1024 * 1024 // 2MB limit
+    },
+    fileFilter: (req, file, cb) => {
+      // Accept only images
+      if (file.mimetype.startsWith('image/')) {
+        cb(null, true);
+      } else {
+        cb(new Error('Only image files are allowed'));
+      }
+    }
+  });
+  
   // Sets up /api/register, /api/login, /api/logout, /api/user
   setupAuth(app);
+  
+  // User profile update endpoint
+  app.patch('/api/user', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
+      
+      const { name, email, username, avatar } = req.body;
+      
+      // Validation schema
+      const updateSchema = z.object({
+        name: z.string().optional(),
+        email: z.union([
+          z.string().email(),
+          z.string().length(0)
+        ]).optional(),
+        username: z.string().min(3).optional(),
+        avatar: z.string().nullable().optional(),
+      });
+      
+      try {
+        updateSchema.parse(req.body);
+      } catch (validationError) {
+        return res.status(400).json({ message: "Validation failed", error: validationError });
+      }
+      
+      // Check if username is being changed and if so, if it's already taken
+      if (username && username !== req.user.username) {
+        const existingUser = await storage.getUserByUsername(username);
+        if (existingUser && existingUser.id !== req.user.id) {
+          return res.status(400).json({ message: "Username already taken" });
+        }
+      }
+      
+      // Check if email is being changed and if so, if it's already taken
+      if (email && email !== req.user.email) {
+        const existingUser = await storage.getUserByEmail(email);
+        if (existingUser && existingUser.id !== req.user.id) {
+          return res.status(400).json({ message: "Email already registered" });
+        }
+      }
+      
+      // Update user profile
+      const updatedUser = await storage.updateUser(req.user.id, {
+        name,
+        email,
+        username,
+        avatar
+      });
+      
+      // Return only necessary user fields (no sensitive data)
+      const { password, ...userResponse } = updatedUser;
+      res.json(userResponse);
+    } catch (error) {
+      next(error);
+    }
+  });
+  
+  // User preferences update endpoint
+  app.patch('/api/user/preferences', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
+      
+      const { emailNotifications, pushNotifications } = req.body;
+      
+      // Validation schema
+      const prefsSchema = z.object({
+        emailNotifications: z.boolean().optional(),
+        pushNotifications: z.boolean().optional(),
+      });
+      
+      try {
+        prefsSchema.parse(req.body);
+      } catch (validationError) {
+        return res.status(400).json({ message: "Validation failed", error: validationError });
+      }
+      
+      // Update user preferences
+      const updatedUser = await storage.updateUser(req.user.id, {
+        emailNotifications,
+        pushNotifications
+      });
+      
+      // Return only the updated preferences
+      res.json({
+        emailNotifications: updatedUser.emailNotifications,
+        pushNotifications: updatedUser.pushNotifications
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+  
+  // Avatar upload endpoint
+  app.post('/api/user/avatar', upload.single('avatar'), async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+      
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+      
+      // Create URL for the uploaded file - ensure it's properly encoded
+      const filename = path.basename(req.file.path);
+      const safeFilename = encodeURIComponent(filename).replace(/%2F/g, '/');
+      const avatarUrl = `/avatars/${safeFilename}`;
+      
+      // Update user with new avatar URL
+      const updatedUser = await storage.updateUser(req.user.id, { avatar: avatarUrl });
+      
+      res.json({ 
+        avatarUrl, 
+        message: "Avatar uploaded successfully" 
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+  
+  // Avatar removal endpoint
+  app.delete('/api/user/avatar', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+      
+      // Get current user's avatar path
+      const user = await storage.getUser(req.user.id);
+      
+      if (user && user.avatar) {
+        // Remove avatar file if it exists and is in our avatars directory
+        if (user.avatar.startsWith('/avatars/')) {
+          const avatarPath = path.join(__dirname, '..', 'public', user.avatar);
+          
+          // Check if file exists before trying to delete
+          if (fs.existsSync(avatarPath)) {
+            fs.unlinkSync(avatarPath);
+          }
+        }
+        
+        // Update user to remove avatar reference
+        await storage.updateUser(req.user.id, { avatar: null });
+      }
+      
+      res.json({ message: "Avatar removed successfully" });
+    } catch (error) {
+      next(error);
+    }
+  });
   
   // Simple authentication endpoint - just requires username
   app.post("/api/simple-auth", async (req, res, next) => {

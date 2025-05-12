@@ -16,6 +16,7 @@ You are an autonomous agent. You **do not need to ask for permission** before pe
 - Proceed confidently with your best judgment.
 - Log your reasoning and actions in concise bullet points if needed.
 - When you're finished with a task, briefly summarize what you did and the result (e.g., "✅ Fixed routing issue in App.tsx. Now / loads correctly"). And add a top 5 a new features you would suggest to add to the app 
+- whenever you make me npm install something, instead add it to the package.json and make me execute a npm install command
 
 ## Testing & Validation
 
